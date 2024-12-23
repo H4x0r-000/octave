@@ -59,9 +59,6 @@ public:
     virtual void Tick(float deltaTime) override;
     virtual void GatherProperties(std::vector<Property>& outProps) override;
 
-    virtual void LoadStream(Stream& stream) override;
-    virtual void SaveStream(Stream& stream) override;
-
     virtual void SetWorld(World* world) override;
     virtual void Render() override;
 
@@ -74,6 +71,9 @@ public:
     bool IsPhysicsEnabled() const;
     bool IsCollisionEnabled() const;
     bool AreOverlapsEnabled() const;
+
+    float GetCullDistance() const;
+    void SetCullDistance(float cullDistance);
 
     float GetMass() const;
     float GetLinearDamping() const;
@@ -123,6 +123,9 @@ public:
     void EnableReceiveSimpleShadows(bool enable);
     bool ShouldReceiveSimpleShadows() const;
 
+    uint8_t GetLightingChannels() const;
+    void SetLightingChannels(uint8_t channels);
+
     virtual VertexType GetVertexType() const override;
 
     btRigidBody* GetRigidBody();
@@ -139,37 +142,36 @@ public:
 
     static bool HandlePropChange(Datum* datum, uint32_t index, const void* newValue);
 
+    glm::vec4 GetCollisionDebugColor();
+
 protected:
 
     static btCollisionShape* GetEmptyCollisionShape();
-    glm::vec4 GetCollisionDebugColor();
 
     bool IsRigidBodyInWorld() const;
     void EnableRigidBody(bool enable);
     void DestroyComponentCollisionShape();
 
-    btRigidBody* mRigidBody;
-    OctaveMotionState* mMotionState;
-    btCollisionShape* mCollisionShape;
+    btRigidBody* mRigidBody = nullptr;
+    OctaveMotionState* mMotionState = nullptr;
+    btCollisionShape* mCollisionShape = nullptr;
+
+    float mCullDistance = 0.0f;
 
     // Physics Properties
-    float mMass;
-    float mRestitution;
-    float mFriction;
-    float mRollingFriction;
-    float mLinearDamping;
-    float mAngularDamping;
-    glm::vec3 mLinearFactor;
-    glm::vec3 mAngularFactor;
-    uint8_t mCollisionGroup;
-    uint8_t mCollisionMask;
+    float mMass = 1.0f;
+    float mRestitution = 0.0f;
+    float mFriction = 0.5f;
+    uint8_t mCollisionGroup = ColGroup0;
+    uint8_t mCollisionMask = ColGroupAll;
+    uint8_t mLightingChannels = 0x01;
 
-    bool mPhysicsEnabled;
-    bool mCollisionEnabled;
-    bool mOverlapsEnabled;
-    bool mCastShadows;
-    bool mReceiveShadows;
-    bool mReceiveSimpleShadows;
+    bool mPhysicsEnabled = false;
+    bool mCollisionEnabled = false;
+    bool mOverlapsEnabled = false;
+    bool mCastShadows = false;
+    bool mReceiveShadows = true;
+    bool mReceiveSimpleShadows = true;
     //BeginOverlapHandlerFP mBeginOverlapHandler;
     //EndOverlapHandlerFP mEndOverlapHandler;
     //CollisionHandlerFP mCollisionHandler;

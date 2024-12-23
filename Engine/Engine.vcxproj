@@ -33,6 +33,18 @@
       <Configuration>ReleaseEditor</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseSteam|Android-arm64-v8a">
+      <Configuration>ReleaseSteam</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseSteam|Win32">
+      <Configuration>ReleaseSteam</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseSteam|x64">
+      <Configuration>ReleaseSteam</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Release|Android-arm64-v8a">
       <Configuration>Release</Configuration>
       <Platform>Android-arm64-v8a</Platform>
@@ -139,6 +151,12 @@
     <CharacterSet>MultiByte</CharacterSet>
     <AndroidMinSdkVersion>24</AndroidMinSdkVersion>
   </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -229,6 +247,10 @@
     <OutDir>$(ProjectDir)Build\Android\$(Configuration)\$(Platform)\</OutDir>
     <IntDir>$(ProjectDir)Intermediate\Android\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">
+    <OutDir>$(ProjectDir)Build\Windows\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)Intermediate\Windows\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -279,7 +301,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(ProjectDir)../External;$(VULKAN_SDK)/Include;$(ProjectDir)Source;$(ProjectDir)Source/Engine;$(ProjectDir)../External/Assimp;$(ProjectDir)../External/Bullet;$(ProjectDir)Source/Editor;$(ProjectDir)../External/Lua;$(ProjectDir)../External/Vorbis;;$(ProjectDir)../External/EOS/Include/;$(ProjectDir)../External/Steam/public/steam/</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NET_PLATFORM_STEAM=0;PLATFORM_WINDOWS=1;API_VULKAN=1;EDITOR=0;WIN32;_CRT_SECURE_NO_WARNINGS;VK_USE_PLATFORM_WIN32_KHR;GLM_FORCE_RADIANS;GLM_FORCE_DEPTH_ZERO_TO_ONE;%(PreprocessorDefinitions);NOMINMAX</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NET_PLATFORM_STEAM=1;PLATFORM_WINDOWS=1;API_VULKAN=1;EDITOR=0;WIN32;_CRT_SECURE_NO_WARNINGS;VK_USE_PLATFORM_WIN32_KHR;GLM_FORCE_RADIANS;GLM_FORCE_DEPTH_ZERO_TO_ONE;%(PreprocessorDefinitions);NOMINMAX</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
@@ -519,6 +541,20 @@
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)../External;$(VULKAN_SDK)/Include;$(ProjectDir)Source;$(ProjectDir)Source/Engine;$(ProjectDir)../External/Assimp;$(ProjectDir)../External/Bullet;$(ProjectDir)Source/Editor;$(ProjectDir)../External/Lua;$(ProjectDir)../External/Vorbis;;$(ProjectDir)../External/EOS/Include/;$(ProjectDir)../External/Steam/public/steam/</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NET_PLATFORM_STEAM=1;PLATFORM_WINDOWS=1;API_VULKAN=1;EDITOR=0;WIN32;_CRT_SECURE_NO_WARNINGS;VK_USE_PLATFORM_WIN32_KHR;GLM_FORCE_RADIANS;GLM_FORCE_DEPTH_ZERO_TO_ONE;%(PreprocessorDefinitions);NOMINMAX</PreprocessorDefinitions>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Lib>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(VULKAN_SDK)/Bin;$(SolutionDir)Engine/External/lib/Lib/;$(VULKAN_SDK)/Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Lib>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\External\Imgui\imgui.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -527,6 +563,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\External\Imgui\imgui_demo.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -535,6 +572,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\External\Imgui\imgui_draw.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -543,6 +581,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\External\Imgui\imgui_tables.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -551,6 +590,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\External\Imgui\imgui_widgets.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -559,6 +599,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\External\Imgui\misc\cpp\imgui_stdlib.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -567,9 +608,12 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseSteam|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="Source\Audio\3DS\Audio_3DS.cpp" />
     <ClCompile Include="Source\Audio\Android\Audio_Android.cpp" />
     <ClCompile Include="Source\Audio\Audio.cpp" />
+    <ClCompile Include="Source\Audio\Dolphin\Audio_Dolphin.cpp" />
     <ClCompile Include="Source\Audio\Linux\Audio_Linux.cpp" />
     <ClCompile Include="Source\Audio\Windows\Audio_Windows.cpp" />
     <ClCompile Include="Source\Editor\ActionManager.cpp" />
@@ -617,6 +661,7 @@
     <ClCompile Include="Source\Engine\Nodes\3D\Camera3d.cpp" />
     <ClCompile Include="Source\Engine\Nodes\3D\Capsule3d.cpp" />
     <ClCompile Include="Source\Engine\Nodes\3D\DirectionalLight3d.cpp" />
+    <ClCompile Include="Source\Engine\Nodes\3D\InstancedMesh3d.cpp" />
     <ClCompile Include="Source\Engine\Nodes\3D\Light3d.cpp" />
     <ClCompile Include="Source\Engine\Nodes\3D\Mesh3d.cpp" />
     <ClCompile Include="Source\Engine\Nodes\3D\Particle3d.cpp" />
@@ -661,7 +706,12 @@
     <ClCompile Include="Source\Engine\TimerManager.cpp" />
     <ClCompile Include="Source\Engine\Utilities.cpp" />
     <ClCompile Include="Source\Engine\World.cpp" />
+    <ClCompile Include="Source\Graphics\C3D\C3dUtils.cpp" />
+    <ClCompile Include="Source\Graphics\C3D\DoubleBuffer.cpp" />
+    <ClCompile Include="Source\Graphics\C3D\Graphics_C3D.cpp" />
     <ClCompile Include="Source\Graphics\GraphicsUtils.cpp" />
+    <ClCompile Include="Source\Graphics\GX\Graphics_GX.cpp" />
+    <ClCompile Include="Source\Graphics\GX\GxUtils.cpp" />
     <ClCompile Include="Source\Graphics\Vulkan\PostProcessChain.cpp" />
     <ClCompile Include="Source\Graphics\Vulkan\PostProcess\BlurPass.cpp" />
     <ClCompile Include="Source\Graphics\Vulkan\PostProcess\PostProcessPass.cpp" />
@@ -685,7 +735,9 @@
     <ClCompile Include="Source\Graphics\Vulkan\Graphics_Vulkan.cpp" />
     <ClCompile Include="Source\Graphics\Vulkan\VulkanTypes.cpp" />
     <ClCompile Include="Source\Graphics\Vulkan\VulkanUtils.cpp" />
+    <ClCompile Include="Source\Input\3DS\Input_3DS.cpp" />
     <ClCompile Include="Source\Input\Android\Input_Android.cpp" />
+    <ClCompile Include="Source\Input\Dolphin\Input_Dolphin.cpp" />
     <ClCompile Include="Source\Input\Input.cpp" />
     <ClCompile Include="Source\Input\InputUtils.cpp" />
     <ClCompile Include="Source\Input\Linux\Input_Linux.cpp" />
@@ -701,6 +753,7 @@
     <ClCompile Include="Source\LuaBindings\Capsule3d_Lua.cpp" />
     <ClCompile Include="Source\LuaBindings\CheckBox_Lua.cpp" />
     <ClCompile Include="Source\LuaBindings\ComboBox_Lua.cpp" />
+    <ClCompile Include="Source\LuaBindings\InstancedMesh3d_Lua.cpp" />
     <ClCompile Include="Source\LuaBindings\MaterialBase_Lua.cpp" />
     <ClCompile Include="Source\LuaBindings\Material_Lua.cpp" />
     <ClCompile Include="Source\LuaBindings\NodeRef_Lua.cpp" />
@@ -752,13 +805,17 @@
     <ClCompile Include="Source\LuaBindings\VerticalList_Lua.cpp" />
     <ClCompile Include="Source\LuaBindings\Widget_Lua.cpp" />
     <ClCompile Include="Source\LuaBindings\World_Lua.cpp" />
+    <ClCompile Include="Source\Network\3DS\Network_3DS.cpp" />
     <ClCompile Include="Source\Network\Android\Network_Android.cpp" />
+    <ClCompile Include="Source\Network\Dolphin\Network_Dolphin.cpp" />
     <ClCompile Include="Source\Network\Linux\Network_Linux.cpp" />
     <ClCompile Include="Source\Network\NetPlatform.cpp" />
     <ClCompile Include="Source\Network\NetPlatformEpic.cpp" />
     <ClCompile Include="Source\Network\NetPlatformSteam.cpp" />
     <ClCompile Include="Source\Network\Windows\Network_Windows.cpp" />
+    <ClCompile Include="Source\System\3DS\System_3DS.cpp" />
     <ClCompile Include="Source\System\Android\System_Android.cpp" />
+    <ClCompile Include="Source\System\Dolphin\System_Dolphin.cpp" />
     <ClCompile Include="Source\System\Linux\System_Linux.cpp" />
     <ClCompile Include="Source\System\Windows\System_Windows.cpp" />
   </ItemGroup>
@@ -852,6 +909,7 @@
     <ClInclude Include="Source\Engine\Nodes\3D\Camera3d.h" />
     <ClInclude Include="Source\Engine\Nodes\3D\Capsule3d.h" />
     <ClInclude Include="Source\Engine\Nodes\3D\DirectionalLight3d.h" />
+    <ClInclude Include="Source\Engine\Nodes\3D\InstancedMesh3d.h" />
     <ClInclude Include="Source\Engine\Nodes\3D\Light3d.h" />
     <ClInclude Include="Source\Engine\Nodes\3D\Mesh3d.h" />
     <ClInclude Include="Source\Engine\Nodes\3D\Particle3d.h" />
@@ -897,10 +955,15 @@
     <ClInclude Include="Source\Engine\Utilities.h" />
     <ClInclude Include="Source\Engine\Vertex.h" />
     <ClInclude Include="Source\Engine\World.h" />
+    <ClInclude Include="Source\Graphics\C3D\C3dTypes.h" />
+    <ClInclude Include="Source\Graphics\C3D\C3dUtils.h" />
+    <ClInclude Include="Source\Graphics\C3D\DoubleBuffer.h" />
     <ClInclude Include="Source\Graphics\Graphics.h" />
     <ClInclude Include="Source\Graphics\GraphicsConstants.h" />
     <ClInclude Include="Source\Graphics\GraphicsTypes.h" />
     <ClInclude Include="Source\Graphics\GraphicsUtils.h" />
+    <ClInclude Include="Source\Graphics\GX\GxTypes.h" />
+    <ClInclude Include="Source\Graphics\GX\GxUtils.h" />
     <ClInclude Include="Source\Graphics\Vulkan\PostProcessChain.h" />
     <ClInclude Include="Source\Graphics\Vulkan\PostProcess\BlurPass.h" />
     <ClInclude Include="Source\Graphics\Vulkan\PostProcess\PostProcessPass.h" />
@@ -939,6 +1002,7 @@
     <ClInclude Include="Source\LuaBindings\Capsule3d_Lua.h" />
     <ClInclude Include="Source\LuaBindings\CheckBox_Lua.h" />
     <ClInclude Include="Source\LuaBindings\ComboBox_Lua.h" />
+    <ClInclude Include="Source\LuaBindings\InstancedMesh3d_Lua.h" />
     <ClInclude Include="Source\LuaBindings\MaterialBase_Lua.h" />
     <ClInclude Include="Source\LuaBindings\Material_Lua.h" />
     <ClInclude Include="Source\LuaBindings\NodeRef_Lua.h" />

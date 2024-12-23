@@ -75,26 +75,6 @@ void Camera3D::GatherProxyDraws(std::vector<DebugDraw>& inoutDraws)
 #endif
 }
 
-void Camera3D::SaveStream(Stream& stream)
-{
-    Node3D::SaveStream(stream);
-    stream.WriteUint8(uint8_t(mProjectionMode));
-    stream.WriteFloat(mFovY);
-    stream.WriteFloat(mOrthoWidth);
-    stream.WriteFloat(mNear);
-    stream.WriteFloat(mFar);
-}
-
-void Camera3D::LoadStream(Stream& stream)
-{
-    Node3D::LoadStream(stream);
-    mProjectionMode = ProjectionMode(stream.ReadUint8());
-    mFovY = stream.ReadFloat();
-    mOrthoWidth = stream.ReadFloat();
-    mNear = stream.ReadFloat();
-    mFar = stream.ReadFloat();
-}
-
 ProjectionMode Camera3D::GetProjectionMode() const
 {
     return mProjectionMode;
@@ -367,7 +347,7 @@ glm::vec3 Camera3D::ScreenToWorldPosition(int32_t x, int32_t y)
     return worldPos;
 }
 
-glm::vec3 Camera3D::TraceScreenToWorld(int32_t x, int32_t y, uint8_t colMask, Primitive3D** outComp)
+glm::vec3 Camera3D::TraceScreenToWorld(int32_t x, int32_t y, uint8_t colMask, RayTestResult& rayResult)
 {
     glm::vec3 worldPos = ScreenToWorldPosition(x, y);
 
@@ -375,15 +355,9 @@ glm::vec3 Camera3D::TraceScreenToWorld(int32_t x, int32_t y, uint8_t colMask, Pr
     glm::vec3 rayDir = Maths::SafeNormalize(worldPos - startPos);
     glm::vec3 endPos = startPos + rayDir * GetFarZ();
 
-    RayTestResult result;
-    GetWorld()->RayTest(startPos, endPos, colMask, result);
+    GetWorld()->RayTest(startPos, endPos, colMask, rayResult);
 
-    if (outComp != nullptr)
-    {
-        *outComp = result.mHitNode;
-    }
-
-    return result.mHitPosition;
+    return rayResult.mHitPosition;
 }
 
 const bool Camera3D::IsEditorCamera()

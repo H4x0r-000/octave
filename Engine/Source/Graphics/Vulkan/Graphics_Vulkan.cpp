@@ -165,10 +165,10 @@ void GFX_Reset()
     }
 }
 
-Node3D* GFX_ProcessHitCheck(World* world, int32_t x, int32_t y)
+Node3D* GFX_ProcessHitCheck(World* world, int32_t x, int32_t y, uint32_t* outInstance)
 {
 #if EDITOR
-    return gVulkanContext->ProcessHitCheck(world, x, y);
+    return gVulkanContext->ProcessHitCheck(world, x, y, outInstance);
 #else
     return nullptr;
 #endif
@@ -309,7 +309,7 @@ void GFX_CreateStaticMeshCompResource(StaticMesh3D* staticMeshComp)
 
 void GFX_DestroyStaticMeshCompResource(StaticMesh3D* staticMeshComp)
 {
-
+    DestroyStaticMeshCompResource(staticMeshComp);
 }
 
 void GFX_UpdateStaticMeshCompResourceColors(StaticMesh3D* staticMeshComp)
@@ -355,6 +355,11 @@ bool GFX_IsCpuSkinningRequired(SkeletalMesh3D* skeletalMeshComp)
 void GFX_DrawShadowMeshComp(ShadowMesh3D* shadowMeshComp)
 {
     DrawShadowMeshComp(shadowMeshComp);
+}
+
+void GFX_DrawInstancedMeshComp(InstancedMesh3D* instancedMeshComp)
+{
+    DrawInstancedMeshComp(instancedMeshComp);
 }
 
 void GFX_CreateTextMeshCompResource(TextMesh3D* textMeshComp)

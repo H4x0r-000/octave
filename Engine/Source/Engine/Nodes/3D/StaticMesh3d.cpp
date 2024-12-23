@@ -96,12 +96,9 @@ StaticMeshCompResource* StaticMesh3D::GetResource()
     return &mResource;
 }
 
-void StaticMesh3D::SaveStream(Stream& stream)
+void StaticMesh3D::SaveStream(Stream& stream, Platform platform)
 {
-    Mesh3D::SaveStream(stream);
-    stream.WriteAsset(mStaticMesh);
-    stream.WriteBool(mUseTriangleCollision);
-    stream.WriteBool(mBakeLighting);
+    Mesh3D::SaveStream(stream, platform);
 
     uint32_t numInstanceColors = (uint32_t)mInstanceColors.size();
     stream.WriteUint32(numInstanceColors);
@@ -111,21 +108,10 @@ void StaticMesh3D::SaveStream(Stream& stream)
     }
 }
 
-void StaticMesh3D::LoadStream(Stream& stream)
+void StaticMesh3D::LoadStream(Stream& stream, Platform platform, uint32_t version)
 {
-    Mesh3D::LoadStream(stream);
-
-    AssetRef meshRef;
-    stream.ReadAsset(meshRef);
-    if (meshRef.Get<StaticMesh>() == nullptr)
-        meshRef = GetDefaultMesh();
-
-    mUseTriangleCollision = stream.ReadBool();
-    mBakeLighting = stream.ReadBool();
-
-    // Set mesh only after determining if we need to use triangle collision.
-    SetStaticMesh(meshRef.Get<StaticMesh>());
-
+    Mesh3D::LoadStream(stream, platform, version);
+    
     // Load instance colors after setting the static mesh. Otherwise it will clear.
     uint32_t numInstanceColors = stream.ReadUint32();
     mInstanceColors.resize(numInstanceColors);
@@ -220,6 +206,11 @@ VertexType StaticMesh3D::GetVertexType() const
     return retType;
 }
 
+void StaticMesh3D::DrawDebugCollision(std::vector<DebugDraw>& inoutDraws, btCollisionShape* collisionShape, const glm::mat4& parentTransform)
+{
+    DebugDrawCollisionShape(collisionShape, this, parentTransform, &inoutDraws);
+}
+
 void StaticMesh3D::GatherProxyDraws(std::vector<DebugDraw>& inoutDraws)
 {
 #if DEBUG_DRAW_ENABLED
@@ -232,114 +223,7 @@ void StaticMesh3D::GatherProxyDraws(std::vector<DebugDraw>& inoutDraws)
         if (staticMesh != nullptr &&
             mCollisionShape != nullptr)
         {
-            uint32_t numCollisionShapes = 0;
-            btCollisionShape* collisionShapes[MAX_COLLISION_SHAPES] = {};
-            glm::mat4 collisionTransforms[MAX_COLLISION_SHAPES] = {};
-            uint32_t collisionMeshIndex = 0;
-            OCT_UNUSED(collisionMeshIndex); // Only used in EDITOR
-
-            btCompoundShape* compoundShape = nullptr;
-            glm::vec3 invScale = 1.0f / GetWorldScale();
-
-            if (mCollisionShape->getShapeType() == COMPOUND_SHAPE_PROXYTYPE)
-            {
-                compoundShape = static_cast<btCompoundShape*>(mCollisionShape);
-                for (uint32_t i = 0; i < uint32_t(compoundShape->getNumChildShapes()); ++i)
-                {
-                    if (i >= MAX_COLLISION_SHAPES)
-                    {
-                        LogError("Too many collision shapes");
-                        break;
-                    }
-
-                    collisionShapes[numCollisionShapes] = compoundShape->getChildShape(i);
-                    const btTransform& bTransform = compoundShape->getChildTransform(i);
-                    btQuaternion bRotation = bTransform.getRotation();
-                    btVector3 bPosition = bTransform.getOrigin();
-
-                    glm::quat rotation = glm::quat(bRotation.w(), bRotation.x(), bRotation.y(), bRotation.z());
-                    glm::vec3 position = { bPosition.x(), bPosition.y(), bPosition.z() };
-
-                    collisionTransforms[i] = glm::mat4(1);
-                    collisionTransforms[i] = glm::translate(collisionTransforms[i], position);
-                    collisionTransforms[i] *= glm::toMat4(rotation);
-                        
-                    ++numCollisionShapes;
-                }
-            }
-            else
-            {
-                collisionShapes[0] = mCollisionShape;
-                numCollisionShapes = 1;
-            }
-
-            for (uint32_t i = 0; i < numCollisionShapes; ++i)
-            {
-                btCollisionShape* collisionShape = collisionShapes[i];
-                int shapeType = collisionShape->getShapeType();
-
-                if (shapeType == EMPTY_SHAPE_PROXYTYPE)
-                    continue;
-
-                DebugDraw debugDraw;
-
-                switch (shapeType)
-                {
-                case BOX_SHAPE_PROXYTYPE:
-                {
-                    // Assuming that default cube mesh has half extents equal to 1,1,1
-                    btBoxShape* boxShape = static_cast<btBoxShape*>(collisionShape);
-                    btVector3 halfExtents = boxShape->getHalfExtentsWithMargin();
-
-                    glm::mat4 scale = glm::scale(invScale);
-                    collisionTransforms[i] = scale * collisionTransforms[i];
-                    collisionTransforms[i] = glm::scale(collisionTransforms[i], { halfExtents.x(), halfExtents.y(), halfExtents.z()});
-
-                    debugDraw.mMesh = LoadAsset<StaticMesh>("SM_Cube");
-                    debugDraw.mTransform = mTransform;
-                    break;
-                }
-                case SPHERE_SHAPE_PROXYTYPE:
-                {
-                    // Assuming that default sphere mesh has a radius of 1
-                    btSphereShape* sphereShape = static_cast<btSphereShape*>(collisionShape);
-                    float radius = sphereShape->getRadius();
-
-                    glm::mat4 scale = glm::scale(invScale);
-                    collisionTransforms[i] = scale * collisionTransforms[i];
-                    collisionTransforms[i] = glm::scale(collisionTransforms[i], {radius, radius, radius});
-
-                    debugDraw.mMesh = LoadAsset<StaticMesh>("SM_Sphere");
-                    debugDraw.mTransform = mTransform;
-                    break;
-                }
-                case CONVEX_HULL_SHAPE_PROXYTYPE:
-                {
-#if CREATE_CONVEX_COLLISION_MESH
-                    // We only create StaticMesh objects for convex hulls when in editor.
-                    debugDraw.mMesh = staticMesh->mCollisionMeshes[collisionMeshIndex];
-                    debugDraw.mTransform = mTransform;
-
-                    ++collisionMeshIndex;
-#endif
-                    break;
-                }
-                case SCALED_TRIANGLE_MESH_SHAPE_PROXYTYPE:
-                {
-                    debugDraw.mMesh = staticMesh;
-                    debugDraw.mTransform = mTransform;
-                    break;
-                }
-                }
-
-                if (compoundShape != nullptr)
-                {
-                    debugDraw.mTransform = debugDraw.mTransform * collisionTransforms[i];
-                }
-
-                debugDraw.mColor = GetCollisionDebugColor();
-                inoutDraws.push_back(debugDraw);
-            }
+            DrawDebugCollision(inoutDraws, mCollisionShape, mTransform);
         }
     }
 #endif
@@ -392,7 +276,9 @@ void StaticMesh3D::RecreateCollisionShape()
 
     if (staticMesh != nullptr)
     {
-        if (mUseTriangleCollision && staticMesh->GetTriangleCollisionShape())
+        if (mUseTriangleCollision && 
+            staticMesh->IsTriangleCollisionMeshEnabled() &&
+            staticMesh->GetTriangleCollisionShape())
         {
             glm::vec3 scale = GetWorldScale();
             btVector3 btscale = btVector3(scale.x, scale.y, scale.z);

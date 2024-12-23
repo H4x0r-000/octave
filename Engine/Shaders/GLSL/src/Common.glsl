@@ -85,6 +85,16 @@ struct LightData
     
     vec3 mDirection;
     uint mType;
+
+    float mIntensity;
+    float mPad0;
+    float mPad1;
+    float mPad2;
+};
+
+struct MeshInstanceData
+{
+    mat4 mTransform;
 };
 
 struct GlobalUniforms
@@ -121,9 +131,9 @@ struct GlobalUniforms
     uint mPathTracingEnabled;
 
     uint mNumLights;
+    int mSelectedInstance;
     uint mPad0;
     uint mPad1;
-    uint mPad2;
 
     LightData mLights[MAX_LIGHTS_PER_FRAME];
 };

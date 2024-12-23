@@ -15,6 +15,7 @@ struct SceneNodeDef
     SceneRef mScene;
     std::string mName;
     std::vector<Property> mProperties;
+    std::vector<uint8_t> mExtraData;
     int8_t mParentBone = -1;
     bool mExposeVariable = false;
 };
@@ -37,24 +38,16 @@ public:
     virtual glm::vec4 GetTypeColor() override;
     virtual const char* GetTypeName() override;
 
-    void Capture(Node* root);
+    void Capture(Node* root, Platform platform = Platform::Count);
     Node* Instantiate();
 
     void ApplyRenderSettings(World* world);
 
 protected:
 
-#if OCT_SCENE_CONVERSION
-    void LoadStreamActor(Stream& stream);
-    void LoadStreamLevel(Stream& stream);
-    void LoadStreamBlueprint(Stream& stream);
-    void LoadStreamWidgetMap(Stream& stream);
-    void ConvEnforceUniqueNames();
-#endif
-
     static bool HandlePropChange(Datum* datum, uint32_t index, const void* newValue);
 
-    void AddNodeDef(Node* node, std::vector<Node*>& nodeList);
+    void AddNodeDef(Node* node, Platform platform, std::vector<Node*>& nodeList);
     int32_t FindNodeIndex(Node* node, const std::vector<Node*>& nodeList);
 
     std::vector<SceneNodeDef> mNodeDefs;

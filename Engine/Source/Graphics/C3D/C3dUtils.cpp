@@ -15,6 +15,7 @@
 #include "Nodes/3D/PointLight3d.h"
 #include "Nodes/3D/DirectionalLight3d.h"
 #include "Nodes/3D/Camera3d.h"
+#include "Nodes/3D/Primitive3d.h"
 
 extern C3dContext gC3dContext;
 
@@ -135,12 +136,21 @@ void BindStaticMesh(StaticMesh* mesh, const void* instanceColors)
     }
 }
 
-void BindMaterial(MaterialLite* material, bool useBakedLighting)
+void BindMaterial(MaterialLite* material, Primitive3D* primitive, bool useBakedLighting)
 {
     if (material != gC3dContext.mLastBoundMaterial)
     {
         ResetTexEnv();
         ResetLightingEnv();
+
+        uint8_t lightingChannels = primitive->GetLightingChannels();
+
+        // Reconfigure lighting environment if light channels or baked lighting changed
+        if (gC3dContext.mLightEnv.mLightingChannels != lightingChannels ||
+            gC3dContext.mLightEnv.mBakedLighting != useBakedLighting)
+        {
+            SetupLighting(lightingChannels, useBakedLighting);
+        }
 
         ShadingModel shadingModel = material->GetShadingModel();
         BlendMode blendMode = material->GetBlendMode();
@@ -150,7 +160,7 @@ void BindMaterial(MaterialLite* material, bool useBakedLighting)
         bool depthless = material->IsDepthTestDisabled();
         bool alphaBlend = (blendMode == BlendMode::Additive || blendMode == BlendMode::Translucent);
 
-        C3D_LightEnv* lightEnv = useBakedLighting ? &gC3dContext.mBakedLightEnv.mLightEnv : &gC3dContext.mLightEnv.mLightEnv;
+        C3D_LightEnv* lightEnv = &gC3dContext.mLightEnv.mLightEnv;
 
         glm::vec4 materialColor = glm::clamp(color, 0.0f, 1.0f);
         uint8_t matColor4[4] =
@@ -368,20 +378,27 @@ void BindMaterial(MaterialLite* material, bool useBakedLighting)
             }
         }
 
+        CullMode cullMode = material->GetCullMode();
+        switch (cullMode)
+        {
+            case CullMode::None: C3D_CullFace(GPU_CULL_NONE); break;
+            case CullMode::Back: C3D_CullFace(GPU_CULL_BACK_CCW); break;
+            case CullMode::Front: C3D_CullFace(GPU_CULL_FRONT_CCW); break;
+        }
+
         gC3dContext.mLastBoundMaterial = material;
     }
 }
 
-void SetupLighting()
+void SetupLighting(uint8_t lightingChannels, bool bakedLighting)
 {
     // Create a null light environment?
     C3D_LightEnvInit(&gC3dContext.mNoLightEnv);
 
-    SetupLightEnv(gC3dContext.mLightEnv, false);
-    SetupLightEnv(gC3dContext.mBakedLightEnv, true);
+    SetupLightEnv(gC3dContext.mLightEnv, lightingChannels, bakedLighting);
 }
 
-void SetupLightEnv(LightEnv& lightEnv, bool dynamicOnly)
+void SetupLightEnv(LightEnv& lightEnv, uint8_t lightingChannels, bool bakedLighting)
 {
     C3D_LightEnvInit(&lightEnv.mLightEnv);
     C3D_LightEnvBind(&lightEnv.mLightEnv);
@@ -402,7 +419,12 @@ void SetupLightEnv(LightEnv& lightEnv, bool dynamicOnly)
     {
         const LightData& lightData = lightArray[i];
 
-        if (dynamicOnly && (lightData.mDomain != LightingDomain::Dynamic))
+        if (bakedLighting && (lightData.mDomain != LightingDomain::Dynamic))
+        {
+            continue;
+        }
+
+        if ((lightingChannels & lightData.mLightingChannels) == 0)
         {
             continue;
         }
@@ -419,6 +441,10 @@ void SetupLightEnv(LightEnv& lightEnv, bool dynamicOnly)
         float lightRadius = lightData.mRadius;
 
         glm::vec4 lightColor = lightData.mColor / C3D_DYNAMIC_LIGHT_SCALE;
+        lightColor *= lightData.mIntensity;
+        lightColor = glm::clamp(lightColor,
+            glm::vec4(0.0f, 0.0f, 0.0f, 0.0f),
+            glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
 
         C3D_FVec lightVec = FVec4_New(lightPosVS.x, lightPosVS.y, lightPosVS.z, 1.0f);
 
@@ -434,7 +460,7 @@ void SetupLightEnv(LightEnv& lightEnv, bool dynamicOnly)
         {
             C3D_LightDistAttnEnable(&light, true);
 
-            // Generate a new Lut if the light radius is different than last frame.
+            // Generate a new Lut if the light radius is different than last setup.
             if (lightEnv.mLightRadii[lightIndex] != lightRadius)
             {
                 lightEnv.mLightRadii[lightIndex] = lightRadius;
@@ -456,6 +482,9 @@ void SetupLightEnv(LightEnv& lightEnv, bool dynamicOnly)
         C3D_LightColor(&light, 0.0f, 0.0f, 0.0f);
         C3D_LightDistAttnEnable(&light, false);
     }
+
+    lightEnv.mLightingChannels = lightingChannels;
+    lightEnv.mBakedLighting = bakedLighting;
 }
 
 void PrepareForwardRendering()

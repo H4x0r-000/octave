@@ -13,11 +13,12 @@ layout (set = 1, binding = 0) uniform GeometryUniformBuffer
 	GeometryUniforms geometry;
 };
 
-layout(location = 0) in vec2 inTexcoord;
-
 layout (location = 0) out uint outId;
 
 void main()
 {
-	outId = geometry.mHitCheckId;
+	uint nodeIdx = (geometry.mHitCheckId << 16);
+	uint instanceIdx = 0;
+	uint hitCheckOut = (nodeIdx | instanceIdx);
+	outId = hitCheckOut;
 }

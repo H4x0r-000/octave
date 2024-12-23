@@ -15,7 +15,15 @@ class Property;
 class AssetDir;
 
 #define ASSET_MAGIC_NUMBER 0x4f435421
-#define ASSET_CURRENT_VERSION 1
+
+//----------------------------------------------------
+// --------------- ASSET VERSIONING ------------------
+// ---------------------------------------------------
+#define ASSET_VERSION_BASE 1
+#define ASSET_VERSION_SCENE_EXTRA_DATA 2
+
+#define ASSET_VERSION_CURRENT 2
+// ----------------------------------------------------
 
 #define DECLARE_ASSET(Base, Parent) DECLARE_FACTORY(Base, Asset); DECLARE_RTTI(Base, Parent);
 #define DEFINE_ASSET(Base) DEFINE_FACTORY(Base, Asset); DEFINE_RTTI(Base);
@@ -33,13 +41,9 @@ enum class AssetLoadState
 struct AssetHeader
 {
     uint32_t mMagic = ASSET_MAGIC_NUMBER;
-    uint32_t mVersion = ASSET_CURRENT_VERSION;
+    uint32_t mVersion = ASSET_VERSION_CURRENT;
     TypeId mType = INVALID_TYPE_ID;
     uint8_t mEmbedded = false;
-
-#if OCT_SCENE_CONVERSION
-    TypeId mOldType = INVALID_TYPE_ID;
-#endif
 };
 
 struct AssetStub
@@ -134,8 +138,4 @@ protected:
 
     std::string mName = "Asset";
     int32_t mRefCount = 0;
-
-#if OCT_SCENE_CONVERSION
-    TypeId mOldType = INVALID_TYPE_ID;
-#endif
 };

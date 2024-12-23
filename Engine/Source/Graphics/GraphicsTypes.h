@@ -179,6 +179,16 @@ struct StaticMeshCompResource
 #endif
 };
 
+struct InstancedMeshCompResource
+{
+#if API_VULKAN
+    Buffer* mInstanceDataBuffer = nullptr;
+    Buffer* mVertexColorBuffer = nullptr;
+#endif
+
+    bool mDirty = true;
+};
+
 struct SkeletalMeshCompResource
 {
 #if API_VULKAN

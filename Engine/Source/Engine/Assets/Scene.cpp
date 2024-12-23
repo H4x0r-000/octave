@@ -10,477 +10,6 @@
 FORCE_LINK_DEF(Scene);
 DEFINE_ASSET(Scene);
 
-#if OCT_SCENE_CONVERSION
-
-#include "Nodes/3D/Audio3d.h"
-#include "Nodes/3D/Box3d.h"
-#include "Nodes/3D/Camera3d.h"
-#include "Nodes/3D/Capsule3d.h"
-#include "Nodes/3D/DirectionalLight3d.h"
-#include "Nodes/3D/Particle3d.h"
-#include "Nodes/3D/PointLight3d.h"
-#include "Nodes/3D/ShadowMesh3d.h"
-#include "Nodes/3D/SkeletalMesh3d.h"
-#include "Nodes/3D/StaticMesh3d.h"
-#include "Nodes/3D/Sphere3d.h"
-#include "Nodes/3D/TextMesh3d.h"
-
-#include "Nodes/Widgets/ArrayWidget.h"
-#include "Nodes/Widgets/Button.h"
-#include "Nodes/Widgets/Canvas.h"
-#include "Nodes/Widgets/CheckBox.h"
-#include "Nodes/Widgets/Poly.h"
-#include "Nodes/Widgets/PolyRect.h"
-#include "Nodes/Widgets/Quad.h"
-#include "Nodes/Widgets/Selector.h"
-#include "Nodes/Widgets/Text.h"
-#include "Nodes/Widgets/TextField.h"
-#include "Nodes/Widgets/VerticalList.h"
-
-#include <unordered_set>
-
-static bool sSceneConversionInit = false;
-static std::unordered_map<TypeId, TypeId> sTypeConversionMap;
-
-static int32_t sConvUniqueNum = 1;
-static std::unordered_set<std::string> sConvNodeNames;
-
-void SceneConversionInit()
-{
-    if (!sSceneConversionInit)
-    {
-        // Could replace hardcoded old typeids with OctHashString("OldName")...
-
-        // Actors
-        sTypeConversionMap.insert({ 69229970ul, Node3D::GetStaticType() }); // Actor
-        sTypeConversionMap.insert({ 4284921748ul, Particle3D::GetStaticType() }); // ParticleActor
-        sTypeConversionMap.insert({ 1065904008ul, StaticMesh3D::GetStaticType() }); // StaticMeshActor
-
-        // Components
-        sTypeConversionMap.insert({ 2798049751ul, Node::GetStaticType() });
-        sTypeConversionMap.insert({ 4201802423ul, Node3D::GetStaticType() });
-        sTypeConversionMap.insert({ 124085076ul, StaticMesh3D::GetStaticType() });
-        sTypeConversionMap.insert({ 82174716ul, ShadowMesh3D::GetStaticType() });
-        sTypeConversionMap.insert({ 3312400722ul, Audio3D::GetStaticType() });
-        sTypeConversionMap.insert({ 111766969ul, Particle3D::GetStaticType() });
-        sTypeConversionMap.insert({ 360869361ul, Sphere3D::GetStaticType() });
-        sTypeConversionMap.insert({ 1549886543ul, SkeletalMesh3D::GetStaticType() });
-        sTypeConversionMap.insert({ 1166207443ul, Camera3D::GetStaticType() });
-        sTypeConversionMap.insert({ 3012054486ul, Node::GetStaticType() }); // ScriptComponent
-        sTypeConversionMap.insert({ 3929081410ul, DirectionalLight3D::GetStaticType() });
-        sTypeConversionMap.insert({ 2255870423ul, Box3D::GetStaticType() });
-        sTypeConversionMap.insert({ 1231172680ul, PointLight3D::GetStaticType() });
-        sTypeConversionMap.insert({ 2918742384ul, Capsule3D::GetStaticType() });
-        sTypeConversionMap.insert({ 1171320635ul, TextMesh3D::GetStaticType() });
-
-        // Widgets
-        sTypeConversionMap.insert({ 2158082633ul, Widget::GetStaticType() }); // ScriptWidget
-
-        sSceneConversionInit = true;
-    }
-}
-
-TypeId ConvertOldType(TypeId typeId)
-{
-    TypeId newType = typeId;
-
-    auto it = sTypeConversionMap.find(typeId);
-    if (it != sTypeConversionMap.end())
-    {
-        newType = it->second;
-    }
-
-    return newType;
-}
-
-void Scene::LoadStreamActor(Stream& stream)
-{
-    TypeId actorType = (TypeId)stream.ReadUint32();
-    bool basicActor = (actorType == 69229970ul) || // Actor
-        (actorType == 1065904008ul) || // StaticMeshActor
-        (actorType == 4284921748ul); // ParticleActor
-    actorType = ConvertOldType(actorType);
-
-    if (basicActor)
-    {
-        actorType = Node3D::GetStaticType();
-    }
-
-    std::string actorName;
-    stream.ReadString(actorName);
-    bool replicate = stream.ReadBool();
-    bool replicateTransform = stream.ReadBool();
-
-    // Tags
-    std::vector<std::string> tags;
-    uint32_t numTags = (uint32_t)stream.ReadUint8();
-    tags.resize(numTags);
-    for (uint32_t i = 0; i < numTags; ++i)
-    {
-        stream.ReadString(tags[i]);
-    }
-
-    // Components
-    uint32_t numComponents = stream.ReadUint32();
-    std::vector<Node*> compsToLoad;
-    std::vector<int32_t> compParents;
-
-    for (uint32_t i = 0; i < numComponents; ++i)
-    {
-        TypeId type = TypeId(stream.ReadUint32());
-        type = ConvertOldType(type);
-
-        Node* node = Node::Construct(type);
-        OCT_ASSERT(node);
-
-        compsToLoad.push_back(node);
-        node->LoadStream(stream);
-
-        compParents.push_back(-1);
-    }
-
-    // Hierarchy
-    for (int32_t i = 0; i < int32_t(numComponents); ++i)
-    {
-        // TODO-NODE: IS THIS BAD???! REMOVE?
-        if (!compsToLoad[i]->IsNode3D())
-        {
-            continue;
-        }
-
-        int32_t compIndex = stream.ReadInt32();
-        int32_t parentIndex = stream.ReadInt32();
-
-        OCT_ASSERT(compsToLoad[compIndex]->IsNode3D());
-        OCT_ASSERT(parentIndex == -1 || compsToLoad[parentIndex]->IsNode3D());
-
-        Node3D* transComp = static_cast<Node3D*>(compsToLoad[compIndex]);
-
-        if (parentIndex == -1)
-        {
-            //SetRootComponent(transComp);
-        }
-        else
-        {
-            //Node3D* parentComp = static_cast<Node3D*>(compsToLoad[parentIndex]);
-            //transComp->Attach(parentComp);
-            compParents[compIndex] = parentIndex;
-        }
-    }
-
-    // Add NodeDefs
-    if (basicActor && numComponents == 1)
-    {
-        // Just add the component as a single node.
-        Node* node = compsToLoad[0];
-        mNodeDefs.push_back(SceneNodeDef());
-        SceneNodeDef& def = mNodeDefs.back();
-        def.mType = node->GetType();
-        def.mParentIndex = 0; // This should be index of the Node3D root we made for the level.
-        
-        const bool kUseCompName = true;
-        def.mName = kUseCompName ? node->GetName() : actorName;
-
-        std::vector<Property> extProps;
-        node->GatherProperties(extProps);
-        for (uint32_t p = 0; p < extProps.size(); ++p)
-        {
-            def.mProperties.push_back(Property());
-            Property& prop = def.mProperties.back();
-            prop.DeepCopy(extProps[p], true);
-
-            if (prop.mName == "Name")
-            {
-                if (def.mType == StaticMesh3D::GetStaticType())
-                {
-                    StaticMesh* mesh = node->As<StaticMesh3D>()->GetStaticMesh();
-                    if (mesh != nullptr)
-                    {
-                        prop.SetString(mesh->GetName());
-                    }
-                }
-            }
-        }
-    }
-    else
-    {
-        // Otherwise, we are going to save a node for the Actor and then save all of the components as children.
-        int32_t actorNodeIdx = (int32_t)mNodeDefs.size();
-        mNodeDefs.push_back(SceneNodeDef());
-        SceneNodeDef& actorDef = mNodeDefs.back();
-        actorDef.mType = actorType;
-        actorDef.mParentIndex = 0;
-        actorDef.mName = actorName;
-
-        {
-            Node* actorNode = Node::Construct(actorType);
-            std::vector<Property> actorProps;
-            actorNode->GatherProperties(actorProps);
-
-            for (uint32_t p = 0; p < actorProps.size(); ++p)
-            {
-                actorDef.mProperties.push_back(Property());
-                actorDef.mProperties.back().DeepCopy(actorProps[p], true);
-            }
-
-            Node::Destruct(actorNode);
-        }
-
-        for (uint32_t i = 0; i < compsToLoad.size(); ++i)
-        {
-            mNodeDefs.push_back(SceneNodeDef());
-            SceneNodeDef& compDef = mNodeDefs.back();
-
-            Node* node = compsToLoad[i];
-
-            int32_t parentNodeDefIdx = compParents[i];
-            if (parentNodeDefIdx == -1)
-            {
-                // This was the root, so now it's attached to the actor node.
-                parentNodeDefIdx = actorNodeIdx;
-            }
-            else
-            {
-                // Need to offset it.
-                parentNodeDefIdx += (actorNodeIdx + 1);
-            }
-
-            compDef.mType = node->GetType();
-            compDef.mParentIndex = parentNodeDefIdx; // This should be index of the Node3D root we made for the level.
-            compDef.mName = node->GetName();
-
-            std::vector<Property> extProps;
-            node->GatherProperties(extProps);
-            for (uint32_t p = 0; p < extProps.size(); ++p)
-            {
-                compDef.mProperties.push_back(Property());
-                compDef.mProperties.back().DeepCopy(extProps[p], true);
-            }
-        }
-    }
-
-    // Destroy temporary Nodes that were constructed
-    for (uint32_t i = 0; i < compsToLoad.size(); ++i)
-    {
-        Node::Destruct(compsToLoad[i]);
-        compsToLoad[i] = nullptr;
-    }
-
-    // Hacky hand-written loading for anything that overrode Actor::LoadStream()
-    // MAKE SURE TO DELETE THE CALL TO Actor::LoadStream() in these classes (since that is done by hand above)
-    if (actorType == 1500601734) // Rotator
-    {
-        Node* hackNode = Node::Construct((TypeId)1500601734);
-        hackNode->LoadStream(stream);
-    }
-}
-
-void Scene::LoadStreamLevel(Stream& stream)
-{
-    bool netLoad = stream.ReadBool();
-
-    mSetAmbientLightColor = stream.ReadBool();
-    mSetShadowColor = stream.ReadBool();
-    mSetFog = stream.ReadBool();
-    mAmbientLightColor = stream.ReadVec4();
-    mShadowColor = stream.ReadVec4();
-    mFogEnabled = stream.ReadBool();
-    mFogColor = stream.ReadVec4();
-    mFogDensityFunc = (FogDensityFunc)stream.ReadUint8();
-    mFogNear = stream.ReadFloat();
-    mFogFar = stream.ReadFloat();
-
-    uint32_t dataSize = stream.ReadUint32();
-
-    // ---------------
-    // Level stream
-    // ---------------
-
-    uint32_t numActors = 0;
-    numActors = stream.ReadUint32();
-    LogDebug("Loading Level... %d Actors", numActors);
-
-    // Make a Node3D for root
-    mNodeDefs.push_back(SceneNodeDef());
-    SceneNodeDef& rootDef = mNodeDefs.back();
-    rootDef.mType = Node3D::GetStaticType();
-    rootDef.mName = mName;
-
-    for (uint32_t i = 0; i < numActors; ++i)
-    {
-        bool bp = stream.ReadBool();
-
-        if (bp)
-        {
-            AssetRef bpRef;
-            stream.ReadAsset(bpRef);
-
-            mNodeDefs.push_back(SceneNodeDef());
-            SceneNodeDef& def = mNodeDefs.back();
-
-            uint32_t numOverrides = stream.ReadUint32();
-
-            for (uint32_t o = 0; o < numOverrides; ++o)
-            {
-                int32_t overIndex = stream.ReadInt32();
-                Property overProp;
-                overProp.ReadStream(stream, false);
-
-                // Only apply overrides on root of BP. Will need to handle all children if required for Yami.
-                if (overIndex == 0)
-                {
-                    def.mProperties.push_back(overProp);
-                }
-            }
-        }
-        else
-        {
-            LoadStreamActor(stream);
-        }
-    }
-
-    ConvEnforceUniqueNames();
-}
-
-void Scene::LoadStreamBlueprint(Stream& stream)
-{
-    TypeId actorType = (TypeId)stream.ReadUint32();
-    TypeId rootType = ConvertOldType(actorType);
-
-    mNodeDefs.push_back(SceneNodeDef());
-    SceneNodeDef& rootDef = mNodeDefs.back();
-    rootDef.mType = rootType;
-    rootDef.mProperties.resize(stream.ReadUint32());
-
-    for (uint32_t i = 0; i < rootDef.mProperties.size(); ++i)
-    {
-        rootDef.mProperties[i].ReadStream(stream, false);
-
-        if (rootDef.mProperties[i].mName == "Name")
-        {
-            rootDef.mName = rootDef.mProperties[i].GetString();
-        }
-    }
-
-    uint32_t numComps = stream.ReadUint32();
-    mNodeDefs.resize(numComps + 1); // components + 1 (root node / old actor)
-
-    std::vector<std::string> parentNames;
-    parentNames.resize(numComps + 1);
-
-    for (uint32_t c = 1; c < numComps + 1; ++c)
-    {
-        stream.ReadString(mNodeDefs[c].mName);
-
-        stream.ReadString(parentNames[c]);
-        mNodeDefs[c].mType = ConvertOldType((TypeId)stream.ReadUint32());
-        mNodeDefs[c].mParentBone = stream.ReadInt8();
-        bool isDefault = stream.ReadBool();
-
-        mNodeDefs[c].mProperties.resize(stream.ReadUint32());
-
-        for (uint32_t p = 0; p < mNodeDefs[c].mProperties.size(); ++p)
-        {
-            mNodeDefs[c].mProperties[p].ReadStream(stream, false);
-
-            if (mNodeDefs[c].mProperties[p].mName == "Name")
-            {
-                mNodeDefs[c].mName = mNodeDefs[c].mProperties[p].GetString();
-            }
-        }
-    }
-
-    std::string rootName;
-    stream.ReadString(rootName);
-    LogDebug("RootName = %s", rootName.c_str());
-
-    // Find parent index for all components
-    for (uint32_t c = 1; c < numComps + 1; ++c)
-    {
-        if (parentNames[c] != "")
-        {
-            int32_t parentIndex = -1;
-            for (uint32_t x = 1; x < numComps + 1; ++x)
-            {
-                if (mNodeDefs[x].mName == parentNames[c])
-                {
-                    parentIndex = x;
-                    mNodeDefs[c].mParentIndex = parentIndex;
-                    break;
-                }
-            }
-
-            // We didn't find a parent for this node??
-            OCT_ASSERT(parentIndex != -1);
-        }
-        else
-        {
-            mNodeDefs[c].mParentIndex = 0;
-        }
-    }
-
-    ConvEnforceUniqueNames();
-}
-
-void Scene::LoadStreamWidgetMap(Stream& stream)
-{
-    uint32_t numWidgetDefs = stream.ReadUint32();
-    OCT_ASSERT(numWidgetDefs < 1000); // Something reasonable?
-    mNodeDefs.resize(numWidgetDefs);
-
-    for (uint32_t i = 0; i < numWidgetDefs; ++i)
-    {
-        SceneNodeDef& def = mNodeDefs[i];
-
-        def.mType = (TypeId)stream.ReadUint32();
-        def.mParentIndex = stream.ReadInt32();
-        int32_t childSlot = stream.ReadInt32();
-        int32_t nativeChildSlot = stream.ReadInt32();
-
-        stream.ReadAsset(def.mScene);
-        def.mExposeVariable = stream.ReadBool();
-
-        uint32_t numProps = stream.ReadUint32();
-        def.mProperties.resize(numProps);
-        for (uint32_t p = 0; p < numProps; ++p)
-        {
-            def.mProperties[p].ReadStream(stream, false);
-
-            // Name needed for Scene
-            if (def.mProperties[p].mName == "Name")
-            {
-                def.mName = def.mProperties[p].GetString();
-            }
-        }
-    }
-
-    ConvEnforceUniqueNames();
-}
-
-void Scene::ConvEnforceUniqueNames()
-{
-    sConvNodeNames.clear();
-    sConvUniqueNum = 1;
-
-    for (uint32_t i = 0; i < mNodeDefs.size(); ++i)
-    {
-        auto it = sConvNodeNames.find(mNodeDefs[i].mName);
-
-        if (it != sConvNodeNames.end())
-        {
-            mNodeDefs[i].mName = mNodeDefs[i].mName + "#" + std::to_string(sConvUniqueNum);
-            sConvUniqueNum++;
-
-            it = sConvNodeNames.find(mNodeDefs[i].mName);
-            OCT_ASSERT(it == sConvNodeNames.end()); // Should be unique now!!
-        }
-
-        sConvNodeNames.insert(mNodeDefs[i].mName);
-    }
-}
-
-#endif
-
 static const char* sFogDensityStrings[] =
 {
     "Linear",
@@ -525,26 +54,6 @@ void Scene::LoadStream(Stream& stream, Platform platform)
 {
     Asset::LoadStream(stream, platform);
 
-#if OCT_SCENE_CONVERSION
-    SceneConversionInit();
-
-    if (mOldType == 83055820)
-    {
-        LoadStreamLevel(stream);
-        return;
-    }
-    else if (mOldType == 2369317065)
-    {
-        LoadStreamBlueprint(stream);
-        return;
-    }
-    else if (mOldType == 3362483201)
-    {
-        LoadStreamWidgetMap(stream);
-        return;
-    }
-#endif
-
     uint32_t numNodeDefs = stream.ReadUint32();
     OCT_ASSERT(numNodeDefs < 65535); // Something reasonable?
     mNodeDefs.resize(numNodeDefs);
@@ -567,6 +76,16 @@ void Scene::LoadStream(Stream& stream, Platform platform)
         {
             def.mProperties[p].ReadStream(stream, false);
         }
+
+        if (mVersion >= ASSET_VERSION_SCENE_EXTRA_DATA)
+        {
+            uint32_t extraDataSize = stream.ReadUint32();
+            if (extraDataSize > 0)
+            {
+                def.mExtraData.resize(extraDataSize);
+                stream.ReadBytes(def.mExtraData.data(), extraDataSize);
+            }
+        }
     }
 
     // World render properties
@@ -586,11 +105,27 @@ void Scene::SaveStream(Stream& stream, Platform platform)
 {
     Asset::SaveStream(stream, platform);
 
-    stream.WriteUint32((uint32_t)mNodeDefs.size());
+    Scene* srcScene = this;
 
-    for (uint32_t i = 0; i < mNodeDefs.size(); ++i)
+    if (platform != Platform::Count)
     {
-        SceneNodeDef& def = mNodeDefs[i];
+        // Capture the scene for the given platform. This was originally
+        // added so we can unroll InstancedMesh3D nodes on platforms that
+        // don't suppose instanced mesh rendering.
+        srcScene = NewTransientAsset<Scene>();
+        Node* tempRoot = Instantiate();
+        srcScene->Capture(tempRoot, platform);
+        Node::Destruct(tempRoot);
+
+        // These transient scene that was created should get garbage collected since 
+        // no AssetRefs are pointing to it.
+    }
+
+    stream.WriteUint32((uint32_t)srcScene->mNodeDefs.size());
+
+    for (uint32_t i = 0; i < srcScene->mNodeDefs.size(); ++i)
+    {
+        const SceneNodeDef& def = srcScene->mNodeDefs[i];
         stream.WriteUint32((uint32_t)def.mType);
         stream.WriteInt32(def.mParentIndex);
 
@@ -604,7 +139,14 @@ void Scene::SaveStream(Stream& stream, Platform platform)
         {
             def.mProperties[p].WriteStream(stream);
         }
+
+        stream.WriteUint32((uint32_t)def.mExtraData.size());
+        stream.WriteBytes(def.mExtraData.data(), (uint32_t)def.mExtraData.size());
     }
+
+    // Now that we've written out the platform-cooked scene data, write out the rest of the data for this scene
+    // from this instance itself. This data is platform independent.
+    srcScene = nullptr;
 
     // World render properties
     stream.WriteBool(mSetAmbientLightColor);
@@ -657,7 +199,7 @@ const char* Scene::GetTypeName()
     return "Scene";
 }
 
-void Scene::Capture(Node* root)
+void Scene::Capture(Node* root, Platform platform)
 {
     mNodeDefs.clear();
 
@@ -665,7 +207,7 @@ void Scene::Capture(Node* root)
         return;
 
     std::vector<Node*> nodeList;
-    AddNodeDef(root, nodeList);
+    AddNodeDef(root, platform, nodeList);
 }
 
 Node* Scene::Instantiate()
@@ -692,12 +234,6 @@ Node* Scene::Instantiate()
                 // the root node spawned other nodes on Create() in C++.
                 Node* existingChild = parent->FindChild(mNodeDefs[i].mName, false);
 
-                // Hack for Rocket Rotators.
-                if (existingChild == nullptr && parent->GetType() == 1500601734)
-                {
-                    existingChild = parent->GetChild(0);
-                }
-
                 if (existingChild != nullptr &&
                     existingChild->GetType() == mNodeDefs[i].mType &&
                     existingChild->GetScene() == mNodeDefs[i].mScene.Get())
@@ -716,6 +252,13 @@ Node* Scene::Instantiate()
                         {
                             nativeChildren.erase(nativeChildren.begin() + n);
                             isNativeChild = true;
+
+                            // Add this node's children as new native child nodes.
+                            for (uint32_t c = 0; c < node->GetNumChildren(); ++c)
+                            {
+                                nativeChildren.push_back(node->GetChild(c));
+                            }
+
                             break;
                         }
                     }
@@ -752,6 +295,12 @@ Node* Scene::Instantiate()
             std::vector<Property> dstProps;
             node->GatherProperties(dstProps);
             CopyPropertyValues(dstProps, mNodeDefs[i].mProperties);
+
+            if (mNodeDefs[i].mExtraData.size() > 0)
+            {
+                Stream extraStream((char*)mNodeDefs[i].mExtraData.data(), (uint32_t)mNodeDefs[i].mExtraData.size());
+                node->LoadStream(extraStream, GetPlatform(), mVersion);
+            }
 
             // If this node has a script, then it might have script properties, and those
             // won't exist in the properties until the "Script File" property was assigned during the
@@ -812,28 +361,47 @@ Node* Scene::Instantiate()
 
         rootNode->SetScene(this);
 
+        // Do we want this behavior for native nodes? I ran into a problem where...
+        // I changed my scene for Buggy (in Navi) so that the root component was no longer a Sphere
+        // and instead made the Buggy node inherit from Node3D. I added a Sphere3D collider node as a childe.
+        // And when I loaded the Scene, it was removing the new sphere? I think the native nodes shouldn't be 
+        // deletable (like in Unreal) but... I feel like I added this loop to destroy unused nodes for a reason...
+        // Update: I think it might be if you rename a native node then you would get duplicates next time you open.
+        // So maybe, we should disable renaming native nodes (force them to be named in C++)
+#if 0
         // Destruct any native nodes that weren't matched by a SceneNodeDef
         for (uint32_t n = 0; n < nativeChildren.size(); ++n)
         {
             Node::Destruct(nativeChildren[n]);
             nativeChildren[n] = nullptr;
         }
+#endif
     }
 
     // Destruct any replicated non-root nodes. The server will need to send the NetMsgSpawn for those.
     if (!NetIsAuthority())
     {
+        std::vector<Node*> repNodesToDelete;
+
         auto pruneReplicated = [&](Node* node) -> bool
         {
             if (node != rootNode && node->IsReplicated())
             {
-                Node::Destruct(node);
-                node = nullptr;
+                repNodesToDelete.push_back(node);
+
+                // We are going to destroy this node, so no need to traverse children
+                return false;
             }
 
             return true;
         };
         rootNode->Traverse(pruneReplicated, true);
+
+        for (uint32_t i = 0; i < repNodesToDelete.size(); ++i)
+        {
+            Node::Destruct(repNodesToDelete[i]);
+            repNodesToDelete[i] = nullptr;
+        }
     }
 
     return rootNode;
@@ -877,7 +445,7 @@ void Scene::ApplyRenderSettings(World* world)
 //
 //}
 
-void Scene::AddNodeDef(Node* node, std::vector<Node*>& nodeList)
+void Scene::AddNodeDef(Node* node, Platform platform, std::vector<Node*>& nodeList)
 {
     OCT_ASSERT(node != nullptr);
 
@@ -896,7 +464,7 @@ void Scene::AddNodeDef(Node* node, std::vector<Node*>& nodeList)
     }
 #endif
 
-    if (node->IsTransient())
+    if (!nodeIsRoot && node->IsTransient())
     {
         // Transient nodes mean they are not saved to the Scene.
         return;
@@ -927,13 +495,21 @@ void Scene::AddNodeDef(Node* node, std::vector<Node*>& nodeList)
         nodeDef.mScene = scene;
         nodeDef.mName = node->GetName();
 
+        Stream extraDataStream;
+        node->SaveStream(extraDataStream, platform);
+        if (extraDataStream.GetSize() > 0)
+        {
+            nodeDef.mExtraData.resize(extraDataStream.GetSize());
+            memcpy(nodeDef.mExtraData.data(), extraDataStream.GetData(), extraDataStream.GetSize());
+        }
+
         GatherNonDefaultProperties(node, nodeDef.mProperties);
 
         if (scene == nullptr)
         {
             for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
             {
-                AddNodeDef(node->GetChild(i), nodeList);
+                AddNodeDef(node->GetChild(i), platform, nodeList);
             }
         }
     }

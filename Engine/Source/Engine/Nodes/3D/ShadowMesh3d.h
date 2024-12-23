@@ -19,10 +19,7 @@ public:
 
     virtual void Render() override;
 
-    virtual void SaveStream(Stream& stream) override;
-    virtual void LoadStream(Stream& stream) override;
-
-    virtual bool IsShadowMesh3D() override;
+    virtual bool IsShadowMesh3D() const override;
 
     virtual void GatherProxyDraws(std::vector<DebugDraw>& inoutDraws) override;
 };

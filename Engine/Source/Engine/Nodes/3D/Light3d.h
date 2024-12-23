@@ -14,9 +14,6 @@ public:
     virtual const char* GetTypeName() const override;
     virtual void GatherProperties(std::vector<Property>& outProps) override;
 
-    virtual void SaveStream(Stream& stream) override;
-	virtual void LoadStream(Stream& stream) override;
-
     virtual bool IsLight3D() const;
     virtual bool IsPointLight3D() const = 0;
     virtual bool IsDirectionalLight3D() const = 0;
@@ -33,10 +30,14 @@ public:
     void SetCastShadows(bool castShadows);
     bool ShouldCastShadows() const;
 
+    uint8_t GetLightingChannels() const;
+    void SetLightingChannels(uint8_t channels);
+
 protected:
 
-    glm::vec4 mColor;
-    float mIntensity;
-    LightingDomain mDomain;
-    bool mCastShadows;
+    glm::vec4 mColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float mIntensity = 1.0f;
+    LightingDomain mDomain = LightingDomain::Dynamic;
+    bool mCastShadows = true;
+    uint8_t mLightingChannels = 0x01;
 };

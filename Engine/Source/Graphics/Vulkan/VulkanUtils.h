@@ -25,8 +25,10 @@ class SkeletalMesh;
 class StaticMesh3D;
 class SkeletalMesh3D;
 class ShadowMesh3D;
+class InstancedMesh3D;
 class TextMesh3D;
 class Particle3D;
+class Primitive3D;
 class Node3D;
 class Quad;
 class Text;
@@ -92,7 +94,7 @@ void EndDebugLabel();
 void WriteGeometryUniformData(GeometryData& outData, World* world, Node3D* comp, const glm::mat4& transform);
 void WriteMaterialLiteUniformData(MaterialData& outData, MaterialLite* material);
 void WriteMaterialCustomUniformData(MaterialData& outData, Material* material);
-void GatherGeometryLightUniformData(GeometryData& outData, Material* material, const Bounds& bounds, StaticMesh3D* staticMeshComp = nullptr);
+void GatherGeometryLightUniformData(GeometryData& outData, Primitive3D* primitive, Material* material, bool isStaticMesh);
 
 VkPipelineColorBlendAttachmentState GetBasicBlendState(BasicBlendState basicBlendState);
 
@@ -123,6 +125,7 @@ void BindSkeletalMeshResourceIndices(SkeletalMesh* skeletalMesh);
 // StaticMeshComp
 void BindGeometryDescriptorSet(StaticMesh3D* staticMeshComp);
 void UpdateStaticMeshCompResourceColors(StaticMesh3D* staticMeshComp);
+void DestroyStaticMeshCompResource(StaticMesh3D* staticMeshComp);
 void DrawStaticMeshComp(StaticMesh3D* staticMeshComp, StaticMesh* meshOverride = nullptr);
 
 // SkeletalMeshComp
@@ -135,6 +138,9 @@ bool IsCpuSkinningRequired(SkeletalMesh3D* skeletalMeshComp);
 
 // ShadowMeshComp
 void DrawShadowMeshComp(ShadowMesh3D* shadowMeshComp);
+
+// InstancedMeshComp
+void DrawInstancedMeshComp(InstancedMesh3D* instancedMeshComp);
 
 // TextMeshComp
 void DestroyTextMeshCompResource(TextMesh3D* textMeshComp);

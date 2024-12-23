@@ -15,6 +15,7 @@
 #include "Nodes/3D/StaticMesh3d.h"
 #include "Nodes/3D/SkeletalMesh3d.h"
 #include "Nodes/3D/ShadowMesh3d.h"
+#include "Nodes/3D/InstancedMesh3d.h"
 #include "Nodes/3D/TextMesh3d.h"
 #include "Nodes/3D/Particle3d.h"
 #include "Nodes/Widgets/Quad.h"
@@ -867,17 +868,20 @@ void WriteGeometryUniformData(GeometryData& outData, World* world, Node3D* comp,
     }
 }
 
-void GatherGeometryLightUniformData(GeometryData& outData, Material* material, const Bounds& bounds, StaticMesh3D* staticMeshComp)
+void GatherGeometryLightUniformData(GeometryData& outData, Primitive3D* primitive, Material* material, bool isStaticMesh)
 {
     // Find overlapping point lights
     uint32_t numLights = 0;
 
     bool useAllDomain = true;
     bool useStaticDomain = false;
+    uint8_t lightingChannels = primitive->GetLightingChannels();
+    Bounds bounds = primitive->GetBounds();
 
-    if (staticMeshComp != nullptr)
+    if (isStaticMesh)
     {
-        bool useBakedLighting = staticMeshComp->GetBakeLighting();
+        StaticMesh3D* staticMeshComp = (StaticMesh3D*)primitive;
+        bool useBakedLighting = staticMeshComp->HasBakedLighting();
         bool hasBakedColor = (staticMeshComp->GetInstanceColors().size() > 0);
 
         // Don't reapply static/all lighting if the mesh already has baked lighting.
@@ -898,7 +902,8 @@ void GatherGeometryLightUniformData(GeometryData& outData, Material* material, c
             LightingDomain domain = lights[i].mDomain;
 
             if ((domain == LightingDomain::Static && !useStaticDomain) ||
-                (domain == LightingDomain::All && !useAllDomain))
+                (domain == LightingDomain::All && !useAllDomain) ||
+                ((lights[i].mLightingChannels & lightingChannels) == 0))
             {
                 continue;
             }
@@ -1164,7 +1169,7 @@ void DestroyTextureResource(Texture* texture)
     }
 }
 
-void BindForwardVertexType(VertexType vertType, Material* material)
+void BindForwardVertexType(VertexType vertType, Material* material, bool instanced = false)
 {
     VulkanContext* ctx = GetVulkanContext();
     MaterialResource* res = material ? material->GetResource() : nullptr;
@@ -1180,14 +1185,14 @@ void BindForwardVertexType(VertexType vertType, Material* material)
     // Always bind correct vert shader even
     Shader* vertShader = material ? res->mVertexShaders[(uint32_t)vertType] : nullptr;
 
-    const char* vertShaderName = "Forward.vert";
+    const char* vertShaderName = instanced ? "ForwardInstanced.vert" : "Forward.vert";
 
     switch (vertType)
     {
     case VertexType::VertexColor:
     case VertexType::VertexInstanceColor:
     case VertexType::VertexColorInstanceColor:
-        vertShaderName = "ForwardColor.vert";
+        vertShaderName = instanced ? "ForwardInstancedColor.vert" : "ForwardColor.vert";
         break;
     case VertexType::VertexSkinned:
         vertShaderName = "ForwardSkinned.vert";
@@ -1508,14 +1513,28 @@ void BindGeometryDescriptorSet(StaticMesh3D* staticMeshComp)
     WriteGeometryUniformData(ubo, world, staticMeshComp, staticMeshComp->GetRenderTransform());
     ubo.mHasBakedLighting = staticMeshComp->HasBakedLighting();
 
-    GatherGeometryLightUniformData(ubo, staticMeshComp->GetMaterial(), staticMeshComp->GetBounds(), staticMeshComp);
+    GatherGeometryLightUniformData(ubo, staticMeshComp, staticMeshComp->GetMaterial(), true);
 
     UniformBlock uniformBlock = WriteUniformBlock(&ubo, sizeof(ubo));
 
-    DescriptorSet::Begin("StaticMesh3D DS")
-        .WriteUniformBuffer(GD_UNIFORM_BUFFER, uniformBlock)
-        .Build()
-        .Bind(cb, 1);
+    if (staticMeshComp->IsInstancedMesh3D())
+    {
+        InstancedMeshCompResource* instResource = ((InstancedMesh3D*)staticMeshComp)->GetInstancedMeshResource();
+
+        DescriptorSet::Begin("StaticMesh3D DS")
+            .WriteUniformBuffer(GD_UNIFORM_BUFFER, uniformBlock)
+            .WriteStorageBuffer(GD_INSTANCE_DATA_BUFFER, instResource->mInstanceDataBuffer)
+            //.WriteStoragebuffer(GD_INSTANCE_COLOR_BUFFER, instResource->mInstanceColorBuffer)
+            .Build()
+            .Bind(cb, 1);
+    }
+    else
+    {
+        DescriptorSet::Begin("StaticMesh3D DS")
+            .WriteUniformBuffer(GD_UNIFORM_BUFFER, uniformBlock)
+            .Build()
+            .Bind(cb, 1);
+    }
 }
 
 void UpdateStaticMeshCompResourceColors(StaticMesh3D* staticMeshComp)
@@ -1553,6 +1572,33 @@ void UpdateStaticMeshCompResourceColors(StaticMesh3D* staticMeshComp)
         }
 
         resource->mColorVertexBuffer->Update(instanceColors.data(), colorBufferSize);
+    }
+}
+
+void DestroyStaticMeshCompResource(StaticMesh3D* staticMeshComp)
+{
+    StaticMeshCompResource* resource = staticMeshComp->GetResource();
+    if (resource->mColorVertexBuffer)
+    {
+        GetDestroyQueue()->Destroy(resource->mColorVertexBuffer);
+        resource->mColorVertexBuffer = nullptr;
+    }
+
+    if (staticMeshComp->IsInstancedMesh3D())
+    {
+        InstancedMeshCompResource* instResource = ((InstancedMesh3D*)staticMeshComp)->GetInstancedMeshResource();
+
+        if (instResource->mInstanceDataBuffer != nullptr)
+        {
+            GetDestroyQueue()->Destroy(instResource->mInstanceDataBuffer);
+            instResource->mInstanceDataBuffer = nullptr;
+        }
+
+        if (instResource->mVertexColorBuffer != nullptr)
+        {
+            GetDestroyQueue()->Destroy(instResource->mVertexColorBuffer);
+            instResource->mVertexColorBuffer = nullptr;
+        }
     }
 }
 
@@ -1683,7 +1729,7 @@ void BindGeometryDescriptorSet(SkeletalMesh3D* skeletalMeshComp)
     {
         SkinnedGeometryData ubo = {};
         WriteGeometryUniformData(ubo.mBase, world, skeletalMeshComp, transform);
-        GatherGeometryLightUniformData(ubo.mBase, skeletalMeshComp->GetMaterial(), skeletalMeshComp->GetBounds());
+        GatherGeometryLightUniformData(ubo.mBase, skeletalMeshComp, skeletalMeshComp->GetMaterial(), false);
 
         for (uint32_t i = 0; i < skeletalMeshComp->GetNumBones(); ++i)
         {
@@ -1697,7 +1743,7 @@ void BindGeometryDescriptorSet(SkeletalMesh3D* skeletalMeshComp)
     {
         GeometryData ubo = {};
         WriteGeometryUniformData(ubo, world, skeletalMeshComp, transform);
-        GatherGeometryLightUniformData(ubo, skeletalMeshComp->GetMaterial(), skeletalMeshComp->GetBounds());
+        GatherGeometryLightUniformData(ubo, skeletalMeshComp, skeletalMeshComp->GetMaterial(), false);
 
         uniformBlock = WriteUniformBlock(&ubo, sizeof(ubo));
     }
@@ -1808,6 +1854,145 @@ void DrawShadowMeshComp(ShadowMesh3D* shadowMeshComp)
     }
 }
 
+static void UpdateInstancedMeshResource(InstancedMesh3D* instancedMeshComp)
+{
+    Camera3D* camera = instancedMeshComp->GetWorld()->GetActiveCamera();
+
+    InstancedMeshCompResource* instResource = instancedMeshComp->GetInstancedMeshResource();
+    uint32_t numInstances = instancedMeshComp->GetNumInstances();
+    uint32_t totalNumVerts = instancedMeshComp->GetTotalVertexCount();
+
+    // Destroy existing buffers
+    if (instResource->mInstanceDataBuffer != nullptr)
+    {
+        GetDestroyQueue()->Destroy(instResource->mInstanceDataBuffer);
+        instResource->mInstanceDataBuffer = nullptr;
+    }
+
+    if (instResource->mVertexColorBuffer != nullptr)
+    {
+        GetDestroyQueue()->Destroy(instResource->mVertexColorBuffer);
+        instResource->mVertexColorBuffer = nullptr;
+    }
+
+    // Generate instance data
+    const std::vector<MeshInstanceData>& meshInstanceData = instancedMeshComp->GetInstanceData();
+    std::vector<MeshInstanceBufferData> meshInstanceBufferData;
+    meshInstanceBufferData.resize(numInstances);
+    OCT_ASSERT(meshInstanceData.size() == numInstances);
+
+    for (uint32_t i = 0; i < numInstances; ++i)
+    {
+        meshInstanceBufferData[i].mTransform = instancedMeshComp->CalculateInstanceTransform(i);
+    }
+
+    // Allocate and fill the buffers
+    instResource->mInstanceDataBuffer = new Buffer(
+        BufferType::Storage,
+        sizeof(MeshInstanceBufferData) * numInstances,
+        "InstanceDataBuffer",
+        meshInstanceBufferData.data(),
+        false);
+
+    instResource->mDirty = false;
+}
+
+void DrawInstancedMeshComp(InstancedMesh3D* instancedMeshComp)
+{
+    VulkanContext* context = GetVulkanContext();
+    StaticMesh* mesh = instancedMeshComp->GetStaticMesh();
+    StaticMeshCompResource* resource = instancedMeshComp->GetResource();
+    InstancedMeshCompResource* instResource = instancedMeshComp->GetInstancedMeshResource();
+
+    uint32_t numInstances = instancedMeshComp->GetNumInstances();
+    uint32_t totalNumVerts = instancedMeshComp->GetTotalVertexCount();
+
+    if (mesh != nullptr &&
+        numInstances > 0)
+    {
+        if (instResource->mDirty)
+        {
+            UpdateInstancedMeshResource(instancedMeshComp);
+        }
+
+        VkCommandBuffer cb = GetCommandBuffer();
+
+        BindStaticMeshResource(mesh);
+
+        bool useMaterial = GetVulkanContext()->AreMaterialsEnabled();
+
+        // Determine vertex type for binding appropriate pipeline
+        VertexType vertexType = VertexType::Vertex;
+        if (useMaterial &&
+            instancedMeshComp->GetInstanceColors().size() == mesh->GetNumVertices() &&
+            resource->mColorVertexBuffer != nullptr)
+        {
+            if (mesh->HasVertexColor())
+            {
+                vertexType = VertexType::VertexColorInstanceColor;
+            }
+            else
+            {
+                vertexType = VertexType::VertexInstanceColor;
+            }
+
+            // Bind color instance buffer at binding #1
+            VkBuffer vertexBuffers[] = { resource->mColorVertexBuffer->Get() };
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(cb, 1, 1, vertexBuffers, offsets);
+        }
+        else if (mesh->HasVertexColor())
+        {
+            vertexType = VertexType::VertexColor;
+        }
+
+        Material* material = nullptr;
+
+        if (useMaterial)
+        {
+            material = instancedMeshComp->GetMaterial();
+            material = material ? material : Renderer::Get()->GetDefaultMaterial();
+        }
+
+        BindForwardVertexType(vertexType, material, true);
+        BindMaterialResource(material);
+
+#if EDITOR
+        Shader* prevFragShader = context->GetPipelineState().mFragmentShader;
+        if (context->GetCurrentRenderPassId() == RenderPassId::HitCheck)
+        {
+            Shader* instancedHitCheckFragShader = context->GetGlobalShader("HitCheckInstanced.frag");
+            context->SetFragmentShader(instancedHitCheckFragShader);
+        }
+        else if (context->GetCurrentRenderPassId() == RenderPassId::Selected)
+        {
+            Shader* instancedSelectedFragShader = context->GetGlobalShader("SelectedInstanced.frag");
+            context->SetFragmentShader(instancedSelectedFragShader);
+        }
+#endif
+
+        GetVulkanContext()->CommitPipeline();
+
+        BindGeometryDescriptorSet(instancedMeshComp);
+        BindMaterialDescriptorSet(material);
+
+        vkCmdDrawIndexed(cb,
+            mesh->GetNumIndices(),
+            numInstances,
+            0,
+            0,
+            0);
+
+#if EDITOR
+        if (context->GetCurrentRenderPassId() == RenderPassId::HitCheck || 
+            context->GetCurrentRenderPassId() == RenderPassId::Selected)
+        {
+            context->SetFragmentShader(prevFragShader);
+        }
+#endif
+    }
+}
+
 void DestroyTextMeshCompResource(TextMesh3D* textMeshComp)
 {
     TextMeshCompResource* resource = textMeshComp->GetResource();
@@ -1884,7 +2069,7 @@ void BindGeometryDescriptorSet(TextMesh3D* textMeshComp)
     GeometryData ubo = {};
 
     WriteGeometryUniformData(ubo, world, textMeshComp, textMeshComp->GetRenderTransform());
-    GatherGeometryLightUniformData(ubo, textMeshComp->GetMaterial(), textMeshComp->GetBounds());
+    GatherGeometryLightUniformData(ubo, textMeshComp, textMeshComp->GetMaterial(), false);
 
     UniformBlock uniformBlock = WriteUniformBlock(&ubo, sizeof(ubo));
     DescriptorSet::Begin("TextMesh3D DS")
@@ -1926,7 +2111,7 @@ void BindGeometryDescriptorSet(Particle3D* particleComp)
 
     GeometryData ubo = {};
     WriteGeometryUniformData(ubo, world, particleComp, transform);
-    GatherGeometryLightUniformData(ubo, particleComp->GetMaterial(), particleComp->GetBounds());
+    GatherGeometryLightUniformData(ubo, particleComp, particleComp->GetMaterial(), false);
 
     UniformBlock uniformBlock = WriteUniformBlock(&ubo, sizeof(ubo));
     DescriptorSet::Begin("Particle3D DS")

@@ -196,6 +196,8 @@ void GFX_BeginFrame()
         // C3D_GetDrawingTime() is the time in miliseconds between C3D_FrameEnd() and the callback when the gpu finishes processing the commands.
         // C3D_GetProcessingTime() is the time in miliseconds between C3D_FrameBegin() and C3D_FrameEnd()
         //LogDebug("Draw: %.2f, Proc: %.2f", C3D_GetDrawingTime(), C3D_GetProcessingTime());
+        GetProfiler()->SetGpuStatTime("Draw", C3D_GetDrawingTime());
+        GetProfiler()->SetGpuStatTime("Processing", C3D_GetProcessingTime());
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
@@ -203,7 +205,8 @@ void GFX_BeginFrame()
         ProcessQueuedFrees();
     }
 
-    SetupLighting();
+    // Setup lighting now that our light array might have changed this frame
+    SetupLighting(0x01, false);
 
     gC3dContext.mLastBoundShaderId = ShaderId::Count;
     gC3dContext.mLastBoundMaterial = nullptr;
@@ -426,7 +429,7 @@ void GFX_Reset()
 
 }
 
-Node3D* GFX_ProcessHitCheck(World* world, int32_t x, int32_t y)
+Node3D* GFX_ProcessHitCheck(World* world, int32_t x, int32_t y, uint32_t* outInstance)
 {
     return nullptr;
 }
@@ -699,9 +702,10 @@ void GFX_DrawStaticMeshComp(StaticMesh3D* staticMeshComp, StaticMesh* meshOverri
     if (mesh != nullptr)
     {
         bool useBakedLighting = staticMeshComp->HasBakedLighting();
-
+        bool hasInstanceColors = staticMeshComp->HasInstanceColors();
         const void* instanceColors = nullptr;
-        if (useBakedLighting)
+
+        if (hasInstanceColors)
         {
             OCT_ASSERT(meshCompResource->mColorVertexData != nullptr);
             instanceColors = meshCompResource->mColorVertexData;
@@ -717,7 +721,7 @@ void GFX_DrawStaticMeshComp(StaticMesh3D* staticMeshComp, StaticMesh* meshOverri
             OCT_ASSERT(material != nullptr);
         }
 
-        BindMaterial(material, useBakedLighting);
+        BindMaterial(material, staticMeshComp, useBakedLighting);
 
         // Upload Uniforms
         C3D_Mtx worldMtx;
@@ -877,7 +881,7 @@ void GFX_DrawSkeletalMeshComp(SkeletalMesh3D* skeletalMeshComp)
             OCT_ASSERT(material != nullptr);
         }
 
-        BindMaterial(material, false);
+        BindMaterial(material, skeletalMeshComp, false);
 
         // Upload Uniforms
         C3D_Mtx worldMtx;
@@ -1008,6 +1012,12 @@ void GFX_DrawShadowMeshComp(ShadowMesh3D* shadowMeshComp)
     }
 }
 
+// InstancedMeshComp
+void GFX_DrawInstancedMeshComp(InstancedMesh3D* instancedMeshComp)
+{
+
+}
+
 // TextMeshComp
 void GFX_CreateTextMeshCompResource(TextMesh3D* textMeshComp)
 {
@@ -1083,7 +1093,7 @@ void GFX_DrawTextMeshComp(TextMesh3D* textMeshComp)
         OCT_ASSERT(material != nullptr);
     }
 
-    BindMaterial(material, false);
+    BindMaterial(material, textMeshComp, false);
 
     // Upload Uniforms
     C3D_Mtx worldMtx;
@@ -1220,7 +1230,7 @@ void GFX_DrawParticleComp(Particle3D* particleComp)
             OCT_ASSERT(material != nullptr);
         }
 
-        BindMaterial(material, false);
+        BindMaterial(material, particleComp, false);
 
         // Upload Uniforms
         C3D_Mtx worldMtx;

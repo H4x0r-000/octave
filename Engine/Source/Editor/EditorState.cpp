@@ -103,12 +103,12 @@ void EditorState::Update(float deltaTime)
             mViewport3D->Update(deltaTime);
             break;
 
-        case EditorMode::Scene3D:
-            mViewport3D->Update(deltaTime);
-            break;
-
         case EditorMode::Scene2D:
             mViewport2D->Update(deltaTime);
+            break;
+
+        case EditorMode::Scene3D:
+            mViewport3D->Update(deltaTime);
             break;
 
         default:
@@ -183,13 +183,13 @@ void EditorState::SetEditorMode(EditorMode mode)
 
         static_assert(
             (int32_t)EditorMode::Scene == 0 && 
-            (int32_t)EditorMode::Scene3D == 1 &&
-            (int32_t)EditorMode::Scene2D == 2,
+            (int32_t)EditorMode::Scene2D == 1 &&
+            (int32_t)EditorMode::Scene3D == 2,
             "Update this check below.");
 
         // Only reset undo history when changing out of "scene editing".
-        if (int32_t(prevMode) > int32_t(EditorMode::Scene2D) ||
-            int32_t(mMode) > int32_t(EditorMode::Scene2D))
+        if (int32_t(prevMode) > int32_t(EditorMode::Scene3D) ||
+            int32_t(mMode) > int32_t(EditorMode::Scene3D))
         {
             ActionManager::Get()->ResetUndoRedo();
         }
@@ -197,6 +197,12 @@ void EditorState::SetEditorMode(EditorMode mode)
         if (mMode != EditorMode::Scene3D)
         {
             SetPaintMode(PaintMode::None);
+        }
+
+        if (mMode != EditorMode::Scene2D)
+        {
+            // Dirty all widgets since they are no longer based off of the wrapper widget
+            GetWorld(0)->DirtyAllWidgets();
         }
     }
 }
@@ -379,6 +385,7 @@ void EditorState::SetSelectedNode(Node* newNode)
         mSelectedNodes[0] != newNode)
     {
         mSelectedNodes.clear();
+        mSelectedInstance = -1;
 
         if (newNode != nullptr)
         {
@@ -399,7 +406,11 @@ void EditorState::SetSelectedNode(Node* newNode)
 
         if (!IsShuttingDown())
         {
-            InspectObject(newNode);
+            if (newNode || GetSelectedNode())
+            {
+                InspectObject(newNode);
+            }
+
             ActionManager::Get()->OnSelectedNodeChanged();
         }
     }
@@ -429,6 +440,8 @@ void EditorState::AddSelectedNode(Node* node, bool addAllChildren)
 
         nodes.push_back(node);
         InspectObject(node);
+
+        mSelectedInstance = -1;
     }
 }
 
@@ -446,14 +459,16 @@ void EditorState::RemoveSelectedNode(Node* node)
             nodes.erase(it);
         }
 
-        if (nodes.size() > 0)
+        if (nodes.size() > 0 && GetInspectedAsset() == nullptr)
         {
             InspectObject(nodes.back());
         }
-        else
+        else if (GetInspectedNode() == node)
         {
             InspectObject(nullptr);
         }
+
+        mSelectedInstance = -1;
     }
 }
 
@@ -714,6 +729,16 @@ void EditorState::DeselectNode(Node* node)
     {
         ActionManager::Get()->OnSelectedNodeChanged();
     }
+}
+
+int32_t EditorState::GetSelectedInstance()
+{
+    return mSelectedInstance;
+}
+
+void EditorState::SetSelectedInstance(int32_t instance)
+{
+    mSelectedInstance = instance;
 }
 
 void CacheEditSceneLinkedProps(EditScene& editScene)
@@ -1040,9 +1065,24 @@ void EditorState::SetTransformLock(TransformLock lock)
         if (node != nullptr && node->IsNode3D())
         {
             glm::vec3 pos = static_cast<Node3D*>(node)->GetWorldPosition();
-            lineX.mStart = pos - glm::vec3(10000, 0, 0);;
-            lineY.mStart = pos - glm::vec3(0, 10000, 0);;
-            lineZ.mStart = pos - glm::vec3(0, 0, 10000);;
+
+            if (node->As<InstancedMesh3D>() &&
+                mSelectedInstance != -1)
+            {
+                InstancedMesh3D* instMesh = node->As<InstancedMesh3D>();
+                if (mSelectedInstance >= 0 &&
+                    mSelectedInstance < (int32_t)instMesh->GetNumInstances())
+                {
+                    MeshInstanceData instData = instMesh->GetInstanceData(mSelectedInstance);
+                    glm::mat4 instTransform = MakeTransform(instData.mPosition, instData.mRotation, instData.mScale);
+                    glm::mat4 totalTransform = instMesh->GetTransform() * instTransform;
+                    pos = totalTransform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+                }
+            }
+
+            lineX.mStart = pos - glm::vec3(10000, 0, 0);
+            lineY.mStart = pos - glm::vec3(0, 10000, 0);
+            lineZ.mStart = pos - glm::vec3(0, 0, 10000);
             lineX.mEnd = pos + glm::vec3(10000,0,0);
             lineY.mEnd = pos + glm::vec3(0, 10000, 0);
             lineZ.mEnd = pos + glm::vec3(0, 0, 10000);

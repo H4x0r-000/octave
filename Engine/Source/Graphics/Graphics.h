@@ -15,6 +15,7 @@ class SkeletalMesh;
 class StaticMesh3D;
 class SkeletalMesh3D;
 class ShadowMesh3D;
+class InstancedMesh3D;
 class TextMesh3D;
 class Particle3D;
 class Camera3D;
@@ -51,7 +52,7 @@ void GFX_DrawFullscreen();
 
 void GFX_ResizeWindow();
 void GFX_Reset();
-Node3D* GFX_ProcessHitCheck(World* world, int32_t x, int32_t y);
+Node3D* GFX_ProcessHitCheck(World* world, int32_t x, int32_t y, uint32_t* outInstance = nullptr);
 uint32_t GFX_GetNumViews();
 
 void GFX_SetFrameRate(int32_t frameRate);
@@ -102,6 +103,9 @@ bool GFX_IsCpuSkinningRequired(SkeletalMesh3D* skeletalMeshComp);
 // ShadowMeshComp
 // ShadowMesh3D uses StaticMeshCompResource for now.
 void GFX_DrawShadowMeshComp(ShadowMesh3D* shadowMeshComp);
+
+// InstancedMeshComp
+void GFX_DrawInstancedMeshComp(InstancedMesh3D* instancedMeshComp);
 
 // TextMeshComp
 void GFX_CreateTextMeshCompResource(TextMesh3D* textMeshComp);

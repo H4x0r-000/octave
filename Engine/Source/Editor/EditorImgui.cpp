@@ -13,6 +13,7 @@
 #include "PaintManager.h"
 
 #include "Nodes/3D/StaticMesh3d.h"
+#include "Nodes/3D/InstancedMesh3d.h"
 #include "Nodes/3D/SkeletalMesh3d.h"
 
 #include "Assets/Scene.h"
@@ -731,7 +732,7 @@ static void DrawAssetProperty(Property& prop, uint32_t index, RTTI* owner, Prope
     static std::string sOrigVal;
     sTempString = asset ? asset->GetName() : "";
 
-    ImGui::InputText("", &sTempString);
+    ImGui::InputText("##AssetNameStr", &sTempString);
 
     if (ImGui::IsItemDeactivatedAfterEdit())
     {
@@ -1306,6 +1307,8 @@ static void DrawSpawnBasic3dMenu(Node* node, bool setFocusPos)
         am->SpawnBasicNode(BASIC_CAMERA, node, selAsset, setFocusPos, spawnPos);
     if (ImGui::MenuItem(BASIC_TEXT_MESH))
         am->SpawnBasicNode(BASIC_TEXT_MESH, node, selAsset, setFocusPos, spawnPos);
+    if (ImGui::MenuItem(BASIC_INSTANCED_MESH))
+        am->SpawnBasicNode(BASIC_INSTANCED_MESH, node, selAsset, setFocusPos, spawnPos);
 }
 static void DrawSpawnBasicWidgetMenu(Node* node)
 {
@@ -2309,6 +2312,122 @@ static void DrawMaterialShaderParams(Material* mat)
     ImGui::PopID();
 }
 
+static void DrawInstancedMeshExtra(InstancedMesh3D* instMesh)
+{
+    static int32_t sActiveInstance = 0;
+
+    int32_t selInstance = GetEditorState()->GetSelectedInstance();
+    if (selInstance != -1)
+    {
+        sActiveInstance = selInstance;
+    }
+
+    if (ImGui::CollapsingHeader("Instance Data", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::PushID(0);
+
+        int32_t numInstances = (int32_t)instMesh->GetNumInstances();
+        char instCountStr[32];
+        snprintf(instCountStr, 32, "Instances: %d", numInstances);
+        ImGui::Text(instCountStr);
+
+        if (ImGui::Button("-"))
+        {
+            if (instMesh->GetNumInstances() > 0)
+            {
+                sActiveInstance = glm::clamp<int32_t>(sActiveInstance, 0, numInstances - 1);
+                std::vector<MeshInstanceData> newInstData = instMesh->GetInstanceData();
+                newInstData.erase(newInstData.begin() + sActiveInstance);
+                ActionManager::Get()->EXE_SetInstanceData(instMesh, -1, newInstData);
+
+                sActiveInstance = int32_t(instMesh->GetNumInstances()) - 1;
+            }
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::Button("+"))
+        {
+            // Not efficient, but lets use the same EXE_SetInstanceData() action
+            std::vector<MeshInstanceData> newInstData = instMesh->GetInstanceData();
+            newInstData.push_back(MeshInstanceData());
+            ActionManager::Get()->EXE_SetInstanceData(instMesh, -1, newInstData);
+
+            sActiveInstance = int32_t(instMesh->GetNumInstances()) - 1;
+        }
+
+        numInstances = (int32_t)instMesh->GetNumInstances();
+
+        if (numInstances > 0)
+        {
+            sActiveInstance = glm::clamp<int32_t>(sActiveInstance, 0, numInstances - 1);
+            if (ImGui::SliderInt("Active Instance", &sActiveInstance, 0, numInstances - 1))
+            {
+                if (selInstance != -1)
+                {
+                    GetEditorState()->SetSelectedInstance(sActiveInstance);
+                }
+            }
+        }
+
+        if (sActiveInstance >= 0 &&
+            sActiveInstance < numInstances)
+        {
+            MeshInstanceData instData = instMesh->GetInstanceData(sActiveInstance);
+            bool positionChanged = false;
+            bool rotationChanged = false;
+            bool scaleChanged = false;
+
+            ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.85f);
+            //ImGui::DragFloat3("", &propVal[0], 1.0f, 0.0f, 0.0f, "%.2f");
+            float vMin = 0.0f;
+            float vMax = 0.0f;
+
+            static MeshInstanceData sOrigVal;
+            MeshInstanceData preVal = instData;
+            bool itemActivated = false;
+            bool itemDeactivated = false;
+            
+            ImGui::Text("Position");
+            positionChanged = ImGui::OctDragScalarN("Position", ImGuiDataType_Float, &instData.mPosition, 3, 1.0f, &vMin, &vMax, "%.2f", 0);
+            itemActivated = itemActivated || ImGui::IsItemActivated();
+            itemDeactivated = itemDeactivated || ImGui::IsItemDeactivatedAfterEdit();
+
+            ImGui::Text("Rotation");
+            rotationChanged = ImGui::OctDragScalarN("Rotation", ImGuiDataType_Float, &instData.mRotation, 3, 1.0f, &vMin, &vMax, "%.2f", 0);
+            itemActivated = itemActivated || ImGui::IsItemActivated();
+            itemDeactivated = itemDeactivated || ImGui::IsItemDeactivatedAfterEdit();
+
+            ImGui::Text("Scale");
+            scaleChanged = ImGui::OctDragScalarN("Scale", ImGuiDataType_Float, &instData.mScale, 3, 1.0f, &vMin, &vMax, "%.2f", 0);
+            itemActivated = itemActivated || ImGui::IsItemActivated();
+            itemDeactivated = itemDeactivated || ImGui::IsItemDeactivatedAfterEdit();
+
+            if (itemActivated)
+            {
+                sOrigVal = preVal;
+            }
+
+            if (itemDeactivated && (memcmp(&sOrigVal, &instData, sizeof(MeshInstanceData)) != 0))
+            {
+                instMesh->SetInstanceData(sActiveInstance, sOrigVal);
+                ActionManager::Get()->EXE_SetInstanceData(instMesh, sActiveInstance, { instData });
+            }
+            else if (positionChanged ||
+                rotationChanged ||
+                scaleChanged)
+            {
+                instMesh->SetInstanceData(sActiveInstance, instData);
+            }
+
+            ImGui::PopItemWidth();
+        }
+
+        ImGui::PopID();
+    }
+}
+
+
 static void DrawPropertiesPanel()
 {
     const float dispWidth = (float)GetEngineState()->mWindowWidth;
@@ -2386,10 +2505,16 @@ static void DrawPropertiesPanel()
 
                 DrawPropertyList(obj, props);
 
+                // Custom imgui drawing
                 if (obj->As<Material>())
                 {
                     Material* mat = obj->As<Material>();
                     DrawMaterialShaderParams(mat);
+                }
+                else if (obj->As<InstancedMesh3D>())
+                {
+                    InstancedMesh3D* instMesh = obj->As<InstancedMesh3D>();
+                    DrawInstancedMeshExtra(instMesh);
                 }
             }
 
@@ -2519,7 +2644,7 @@ static void DrawViewportPanel()
         curMode = int(EditorMode::Count) + int(paintMode) - 1;
     }
 
-    const char* modeStrings[] = { "Scene", "3D", "2D", "Paint Colors", "Paint Instances"};
+    const char* modeStrings[] = { "Scene", "2D", "3D", "Paint Colors", "Paint Instances"};
     ImGui::SetNextItemWidth(70);
     ImGui::Combo("##EditorMode", &curMode, modeStrings, 5);
 
@@ -2927,15 +3052,16 @@ static void DrawPaintColorsPanel()
     ImGui::Begin("Paint Colors", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 
     PaintManager* pm = GetEditorState()->mPaintManager;
-    ImGui::DragFloat("Radius", &pm->mRadius);
-    ImGui::DragFloat("Opacity", &pm->mOpacity);
-    ImGui::OctColorEdit4("Color", &pm->mColor[0], 0);
+    ImGui::DragFloat("Radius", &pm->mRadius, 0.1f, 0.0f, 100.0f);
+    ImGui::DragFloat("Opacity", &pm->mOpacity, 0.01f, 0.0f, 1.0f);
+    ImGui::DragFloat("Spacing", &pm->mSpacing, 0.5f, 0.0f, 500.0f);
+    ImGui::OctColorEdit4("Color", &pm->mColorOptions.mColor[0], 0);
     
     const char* blendModeStrings[] = {"Mix", "Add", "Subtract", "Multiply", "+Alpha", "-Alpha"};
     int32_t blendModeCount = OCT_ARRAY_SIZE(blendModeStrings);
-    ImGui::Combo("Blend Mode", (int*)&(pm->mBlendMode), blendModeStrings, blendModeCount);
+    ImGui::Combo("Blend Mode", (int*)&(pm->mColorOptions.mBlendMode), blendModeStrings, blendModeCount);
 
-    ImGui::Checkbox("Only Facing Normals", &pm->mOnlyFacingNormals);
+    ImGui::Checkbox("Only Facing Normals", &pm->mColorOptions.mOnlyFacingNormals);
     ImGui::Checkbox("Only Render Selected", &pm->mOnlyRenderSelected);
 
     ImGui::End();
@@ -2943,7 +3069,40 @@ static void DrawPaintColorsPanel()
 
 static void DrawPaintInstancesPanel()
 {
+    const float dispWidth = (float)GetEngineState()->mWindowWidth;
+    const float dispHeight = (float)GetEngineState()->mWindowHeight;
 
+    ImGui::SetNextWindowPos(ImVec2(kSidePaneWidth + 10.0f, 40.0f));
+    ImGui::SetNextWindowSize(ImVec2(250.0f, 210.0f));
+
+    ImGui::Begin("Paint Instances", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    
+    ImGui::PushItemWidth(120.0f);
+
+    PaintManager* pm = GetEditorState()->mPaintManager;
+
+    Property prop(DatumType::Asset, "Instance Mesh", nullptr, &(pm->mInstanceOptions.mMesh), 1, nullptr, (int32_t)StaticMesh::GetStaticType());
+    DrawAssetProperty(prop, 0, nullptr, PropertyOwnerType::Count);
+    ImGui::SameLine();
+    ImGui::Text("Mesh");
+
+    ImGui::DragFloat("Radius", &pm->mRadius, 0.1f, 0.0f, 100.0f);
+    ImGui::DragFloat("Spacing", &pm->mSpacing, 0.5f, 0.0f, 500.0f);
+    ImGui::DragFloat("Density", &pm->mInstanceOptions.mDensity, 0.05f, 0.0f, 100.0f);
+    ImGui::DragFloat("Min Separation", &pm->mInstanceOptions.mMinSeparation, 0.05f, 0.0f, 100.0f);
+    ImGui::OctDragScalarN("Min Position", ImGuiDataType_Float, &pm->mInstanceOptions.mMinPosition[0], 3, 1.0f, nullptr, nullptr, "%.2f", 0);
+    ImGui::OctDragScalarN("Max Position", ImGuiDataType_Float, &pm->mInstanceOptions.mMaxPosition[0], 3, 1.0f, nullptr, nullptr, "%.2f", 0);
+    ImGui::OctDragScalarN("Min Rotation", ImGuiDataType_Float, &pm->mInstanceOptions.mMinRotation[0], 3, 1.0f, nullptr, nullptr, "%.2f", 0);
+    ImGui::OctDragScalarN("Max Rotation", ImGuiDataType_Float, &pm->mInstanceOptions.mMaxRotation[0], 3, 1.0f, nullptr, nullptr, "%.2f", 0);
+    ImGui::DragFloat("Min Scale", &pm->mInstanceOptions.mMinScale, 0.05f, 0.0f, 100.0f);
+    ImGui::DragFloat("Max Scale", &pm->mInstanceOptions.mMaxScale, 0.05f, 0.0f, 100.0f);
+    ImGui::Checkbox("Align With Normal", &pm->mInstanceOptions.mAlignWithNormal);
+    ImGui::Checkbox("Only Render Selected", &pm->mOnlyRenderSelected);
+    ImGui::Checkbox("Erase", &pm->mInstanceOptions.mErase);
+
+    ImGui::PopItemWidth();
+
+    ImGui::End();
 }
 
 static void Draw2dSelections()
@@ -3030,8 +3189,9 @@ void EditorImguiInit()
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    
+    // Disabling keyboard controls because it interferes with Alt hotkeys.
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();

@@ -13,6 +13,7 @@
 struct PaintMeshCollision
 {
     btCollisionObject* mCollisionObject = nullptr;
+    StaticMesh3D* mNode = nullptr;
     StaticMeshRef mMesh;
     glm::vec3 mPosition = {};
     glm::quat mRotation = {};
@@ -32,6 +33,28 @@ enum PaintBlendMode
     Count
 };
 
+struct PaintColorOptions
+{
+    PaintBlendMode mBlendMode = PaintBlendMode::Mix;
+    glm::vec4 mColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+    bool mOnlyFacingNormals = true;
+};
+
+struct PaintInstanceOptions
+{
+    StaticMeshRef mMesh;
+    float mDensity = 1.0f;
+    float mMinSeparation = 0.0f;
+    glm::vec3 mMinPosition = {};
+    glm::vec3 mMaxPosition = {};
+    glm::vec3 mMinRotation = {};
+    glm::vec3 mMaxRotation = {};
+    float mMinScale = 1.0f;
+    float mMaxScale = 1.0f;
+    bool mAlignWithNormal = false;
+    bool mErase = false;
+};
+
 struct PendingColorData
 {
     ActionSetInstanceColorsData mData;
@@ -39,6 +62,13 @@ struct PendingColorData
     std::vector<uint32_t> mOriginalColors;
     std::vector<float> mVertexDrawAlpha;
     bool mAnyVertexPainted = false;
+};
+
+struct PendingInstanceData
+{
+    InstancedMesh3D* mMeshNode = nullptr;
+    std::vector<MeshInstanceData> mData;
+    std::vector<MeshInstanceData> mOriginalData;
 };
 
 class PaintManager
@@ -54,6 +84,7 @@ public:
     void RemovePaintMeshCollision(const PaintMeshCollision& col);
 
     void UpdateDynamicsWorld();
+    void UpdateHotkeys();
     void UpdatePaintReticle();
     void UpdatePaintDraw();
 
@@ -77,6 +108,7 @@ public:
     MaterialRef mSphereMaterial;
 
     glm::vec3 mSpherePosition = {};
+    glm::vec3 mSphereNormal = { 0.0f, 1.0f, 0.0f };
     float mRadius = 1.0f;
     float mOpacity = 1.0f;
     bool mSphereValid = false;
@@ -89,18 +121,19 @@ public:
     bool mAdjustmentFinished = false;
     glm::vec2 mAdjustmentAnchor = {};
 
-    bool mOnlyRenderSelected = true;
-    bool mOnlyFacingNormals = true;
+    bool mOnlyRenderSelected = false;
 
     // Spacing is the distance we need to move between paints (in screen space currently)
     float mSpacing = 10.0f;
     glm::vec2 mLastPaintMousePos = {};
 
-    // Vertex Color Options
-    PaintBlendMode mBlendMode = PaintBlendMode::Mix;
-    glm::vec4 mColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+    // Options
+    PaintColorOptions mColorOptions;
+    PaintInstanceOptions mInstanceOptions;
 
+    // Pending data
     std::vector<PendingColorData> mPendingColorData;
+    PendingInstanceData mPendingInstanceData;
 };
 
 #endif

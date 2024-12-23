@@ -23,9 +23,6 @@ public:
     virtual void GatherProperties(std::vector<Property>& outProps) override;
     virtual void GatherProxyDraws(std::vector<DebugDraw>& inoutDraws) override;
 
-    virtual void SaveStream(Stream& stream) override;
-    virtual void LoadStream(Stream& stream) override;
-
     ProjectionMode GetProjectionMode() const;
     void SetProjectionMode(ProjectionMode mode);
     void EnablePerspective(bool perspective);
@@ -59,7 +56,7 @@ public:
 
     glm::vec3 WorldToScreenPosition(glm::vec3 worldPos);
     glm::vec3 ScreenToWorldPosition(int32_t x, int32_t y);
-    glm::vec3 TraceScreenToWorld(int32_t x, int32_t y, uint8_t colMask, Primitive3D** outComp = nullptr);
+    glm::vec3 TraceScreenToWorld(int32_t x, int32_t y, uint8_t colMask, RayTestResult& rayResult);
 
     const bool IsEditorCamera();
 

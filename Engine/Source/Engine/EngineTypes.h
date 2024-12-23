@@ -154,6 +154,7 @@ struct DrawData
     glm::vec3 mPosition;
     Bounds mBounds;
     int32_t mSortPriority;
+    float mDistance2;
     TypeId mNodeType;
     bool mDepthless;
 };
@@ -162,10 +163,12 @@ struct LightData
 {
     LightType mType;
     LightingDomain mDomain;
+    uint8_t mLightingChannels;
     glm::vec3 mPosition;
     glm::vec4 mColor;
     glm::vec3 mDirection;
     float mRadius;
+    float mIntensity;
 };
 
 struct DebugDraw
@@ -262,6 +265,7 @@ struct EngineConfig
     int32_t mWindowHeight = 0;
     bool mValidateGraphics = false;
     bool mFullscreen = false;
+    bool mPackageForSteam = false;
 };
 
 enum class ConsoleMode
@@ -340,6 +344,15 @@ struct SweepTestResult
     glm::vec3 mHitNormal = {};
     glm::vec3 mHitPosition = {};
     float mHitFraction = 0.0f;
+};
+
+struct IgnoreRayResultCallback : btCollisionWorld::ClosestRayResultCallback
+{
+    IgnoreRayResultCallback(const btVector3& rayFromWorld, const btVector3& rayToWorld);
+    virtual btScalar addSingleResult(btCollisionWorld::LocalRayResult & rayResult, bool normalInWorldSpace) override;
+
+    uint32_t mNumIgnoreObjects = 0;
+    btCollisionObject** mIgnoreObjects = nullptr;
 };
 
 struct IgnoreConvexResultCallback : btCollisionWorld::ClosestConvexResultCallback

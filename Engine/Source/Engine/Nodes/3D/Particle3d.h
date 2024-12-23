@@ -48,9 +48,6 @@ public:
     virtual void Start() override;
     ParticleCompResource* GetResource();
 
-    virtual void SaveStream(Stream& stream) override;
-    virtual void LoadStream(Stream& stream) override;
-
     virtual DrawData GetDrawData() override;
     virtual void Render() override;
     virtual void Tick(float deltaTime) override;
@@ -94,7 +91,7 @@ public:
 
     uint32_t GetNumParticles();
     uint32_t GetNumVertices();
-    const std::vector<Particle>& GetParticles();
+    std::vector<Particle>& GetParticles();
     const std::vector<VertexParticle>& GetVertices();
 
     void SetParticleVelocity(int32_t index, glm::vec3 velocity);

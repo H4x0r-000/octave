@@ -31,8 +31,9 @@ void RemoveDir(const char* dirPath);
 std::string GetDirShortName(const std::string& dirName);
 void CreateSymLink(const std::string& original, const std::string& link);
 
-btCollisionShape* CloneCollisionShape(btCollisionShape* srcShape);
+btCollisionShape* CloneCollisionShape(const btCollisionShape* srcShape);
 void DestroyCollisionShape(btCollisionShape* shape);
+void DebugDrawCollisionShape(btCollisionShape* collisionShape, Node3D* node, const glm::mat4& parentTransform, std::vector<DebugDraw>* inoutDraws = nullptr);
 
 uint32_t OctHashString(const char* key);
 void GatherAllNodeNames(std::vector<std::string>& outNames);
@@ -47,6 +48,7 @@ const char* GetPlatformString(Platform platform);
 uint8_t ConvertKeyCodeToChar(uint8_t keyCode, bool shiftDown);
 
 glm::mat4 MakeTransform(glm::vec3 translation, glm::vec3 rotation, glm::vec3 scale);
+btTransform MakeBulletTransform(glm::vec3 translation, glm::vec3 rotationDegrees);
 
 void GatherNonDefaultProperties(Node* node, std::vector<Property>& props);
 

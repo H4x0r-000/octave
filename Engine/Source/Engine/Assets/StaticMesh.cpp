@@ -42,7 +42,7 @@ StaticMesh::StaticMesh() :
     mMaterial(nullptr),
     mNumVertices(0),
     mNumIndices(0),
-    mNumUvMaps(1),
+    mNumUvMaps(2),
     mVertices(nullptr),
     mIndices(nullptr),
     mCollisionShape(nullptr),
@@ -146,9 +146,11 @@ void StaticMesh::LoadStream(Stream& stream, Platform platform)
     // Collision shapes
     bool compound = stream.ReadBool();
     uint32_t numCollisionShapes = stream.ReadUint32();
-    OCT_ASSERT(numCollisionShapes <= MAX_COLLISION_SHAPES);
-    btCollisionShape* collisionShapes[MAX_COLLISION_SHAPES] = {};
-    btTransform collisionTransforms[MAX_COLLISION_SHAPES] = {};
+    std::vector<btCollisionShape*> collisionShapes;
+    std::vector<btTransform> collisionTransforms;
+
+    collisionShapes.resize(numCollisionShapes);
+    collisionTransforms.resize(numCollisionShapes);
 
     for (uint32_t i = 0; i < numCollisionShapes; ++i)
     {
@@ -211,7 +213,7 @@ void StaticMesh::LoadStream(Stream& stream, Platform platform)
         }
     }
 
-    SetCollisionShapes(numCollisionShapes, collisionShapes, collisionTransforms, compound);
+    SetCollisionShapes(numCollisionShapes, collisionShapes.data(), collisionTransforms.data(), compound);
 
     mBounds.mCenter = stream.ReadVec3();
     mBounds.mRadius = stream.ReadFloat();
@@ -261,7 +263,7 @@ void StaticMesh::SaveStream(Stream& stream, Platform platform)
 
     // Collision shapes
     uint32_t numCollisionShapes = 0;
-    btCollisionShape* collisionShapes[MAX_COLLISION_SHAPES] = {};
+    std::vector<btCollisionShape*> collisionShapes;
     btCompoundShape* compoundShape = nullptr;
 
     if (mCollisionShape != nullptr)
@@ -270,19 +272,21 @@ void StaticMesh::SaveStream(Stream& stream, Platform platform)
         {
             compoundShape = static_cast<btCompoundShape*>(mCollisionShape);
             numCollisionShapes = (uint32_t) compoundShape->getNumChildShapes();
-            OCT_ASSERT(numCollisionShapes >= 1 && numCollisionShapes < MAX_COLLISION_SHAPES);
+            OCT_ASSERT(numCollisionShapes >= 1);
 
             for (uint32_t i = 0; i < numCollisionShapes; ++i)
             {
-                collisionShapes[i] = compoundShape->getChildShape(i);
+                collisionShapes.push_back(compoundShape->getChildShape(i));
             }
         }
         else
         {
-            collisionShapes[0] = mCollisionShape;
+            collisionShapes.push_back(mCollisionShape);
             numCollisionShapes = 1;
         }
     }
+
+    OCT_ASSERT(collisionShapes.size() == numCollisionShapes);
 
     stream.WriteBool(compoundShape != nullptr);
     stream.WriteUint32(numCollisionShapes);
@@ -371,6 +375,8 @@ void StaticMesh::Create()
     {
         CreateTriangleCollisionShape();
     }
+
+    ComputeBounds();
 }
 
 void StaticMesh::Destroy()
@@ -428,8 +434,7 @@ void StaticMesh::Import(const std::string& path, ImportOptions* options)
         }
 
         const aiMesh* mainMesh = nullptr;
-        uint32_t numCollisionMeshes = 0;
-        const aiMesh* collisionMeshes[MAX_COLLISION_SHAPES] = {};
+        std::vector<const aiMesh*> collisionMeshes;
 
         for (uint32_t i = 0; i < scene->mNumMeshes; ++i)
         {
@@ -440,15 +445,7 @@ void StaticMesh::Import(const std::string& path, ImportOptions* options)
                 strncmp(meshName, "UBX", 3) == 0 ||
                 strncmp(meshName, "USP", 3) == 0)
             {
-                if (numCollisionMeshes < MAX_COLLISION_SHAPES)
-                {
-                    collisionMeshes[numCollisionMeshes] = mesh;
-                    numCollisionMeshes++;
-                }
-                else
-                {
-                    LogError("More than %d collision meshes found", MAX_COLLISION_SHAPES);
-                }
+                collisionMeshes.push_back(mesh);
             }
             else
             {
@@ -463,7 +460,7 @@ void StaticMesh::Import(const std::string& path, ImportOptions* options)
             }
         }
 
-        Create(scene, *mainMesh, numCollisionMeshes, collisionMeshes);
+        Create(scene, *mainMesh, (uint32_t)collisionMeshes.size(), collisionMeshes.data());
     }
 #endif
 }
@@ -557,12 +554,6 @@ void StaticMesh::SetCollisionShapes(uint32_t numCollisionShapes, btCollisionShap
 {
     if (numCollisionShapes > 0)
     {
-        if (numCollisionShapes > MAX_COLLISION_SHAPES)
-        {
-            LogError("Max collision shapes exceeded! Num: %d, Max: %d", numCollisionShapes, MAX_COLLISION_SHAPES);
-            numCollisionShapes = MAX_COLLISION_SHAPES;
-        }
-
         if (numCollisionShapes == 1 && !compound)
         {
             SetCollisionShape(collisionShapes[0]);
@@ -638,27 +629,31 @@ bool StaticMesh::ShouldGenerateTriangleCollision() const
 
 void StaticMesh::CreateTriangleCollisionShape()
 {
-    OCT_ASSERT(mTriangleIndexVertexArray == nullptr);
-    OCT_ASSERT(mTriangleCollisionShape == nullptr);
     OCT_ASSERT(mNumIndices % 3 == 0);
 
-    mTriangleIndexVertexArray = new btTriangleIndexVertexArray();
+    // Don't do anything if we already have triangle collision data generated
+    // Note: In EDITOR, we always generate triangle collision data even if it's disabled.
+    if (mTriangleIndexVertexArray == nullptr &&
+        mTriangleCollisionShape == nullptr)
+    {
+        mTriangleIndexVertexArray = new btTriangleIndexVertexArray();
 
-    btIndexedMesh mesh;
-    mesh.m_numTriangles = mNumIndices / 3;
-    mesh.m_triangleIndexBase = (const unsigned char *)mIndices;
-    mesh.m_triangleIndexStride = sizeof(IndexType) * 3;
-    mesh.m_numVertices = mNumVertices;
-    mesh.m_vertexBase = (const unsigned char *)mVertices;
-    mesh.m_vertexStride = GetVertexSize();
+        btIndexedMesh mesh;
+        mesh.m_numTriangles = mNumIndices / 3;
+        mesh.m_triangleIndexBase = (const unsigned char*)mIndices;
+        mesh.m_triangleIndexStride = sizeof(IndexType) * 3;
+        mesh.m_numVertices = mNumVertices;
+        mesh.m_vertexBase = (const unsigned char*)mVertices;
+        mesh.m_vertexStride = GetVertexSize();
 
-    mTriangleIndexVertexArray->addIndexedMesh(mesh, sizeof(IndexType) == 2 ? PHY_SHORT : PHY_INTEGER);
+        mTriangleIndexVertexArray->addIndexedMesh(mesh, sizeof(IndexType) == 2 ? PHY_SHORT : PHY_INTEGER);
 
-    bool useQuantizedAabbCompression = true;
+        bool useQuantizedAabbCompression = true;
 
-    mTriangleCollisionShape = new btBvhTriangleMeshShape(mTriangleIndexVertexArray, useQuantizedAabbCompression);
-    mTriangleInfoMap = new btTriangleInfoMap();
-    btGenerateInternalEdgeInfo(mTriangleCollisionShape, mTriangleInfoMap);
+        mTriangleCollisionShape = new btBvhTriangleMeshShape(mTriangleIndexVertexArray, useQuantizedAabbCompression);
+        mTriangleInfoMap = new btTriangleInfoMap();
+        btGenerateInternalEdgeInfo(mTriangleCollisionShape, mTriangleInfoMap);
+    }
 }
 
 void StaticMesh::DestroyTriangleCollisionShape()
@@ -801,14 +796,16 @@ void StaticMesh::Create(
     mNumVertices = meshData.mNumVertices;
     mNumIndices = meshData.mNumFaces * 3;
     
-    mNumUvMaps = glm::clamp(meshData.GetNumUVChannels(), 0u, MAX_UV_MAPS - 1u);
+    // Always set the num uv maps to 2 since we are storing two sets of UVs no matter what.
+    mNumUvMaps = 2;
+    //mNumUvMaps = glm::clamp(meshData.GetNumUVChannels(), 0u, MAX_UV_MAPS - 1u);
 
     mHasVertexColor = meshData.GetNumColorChannels() > 0;
 
     // Get pointers to vertex attributes
     glm::vec3* positions = reinterpret_cast<glm::vec3*>(meshData.mVertices);
     glm::vec3* texcoords0 = meshData.HasTextureCoords(0) ? reinterpret_cast<glm::vec3*>(meshData.mTextureCoords[0]) : nullptr;
-    glm::vec3* texcoords1 = meshData.HasTextureCoords(1) ? reinterpret_cast<glm::vec3*>(meshData.mTextureCoords[1]) : nullptr;
+    glm::vec3* texcoords1 = meshData.HasTextureCoords(1) ? reinterpret_cast<glm::vec3*>(meshData.mTextureCoords[1]) : texcoords0;
     glm::vec3* normals = reinterpret_cast<glm::vec3*>(meshData.mNormals);
     glm::vec4* colors = mHasVertexColor ? reinterpret_cast<glm::vec4*>(meshData.mColors[0]) : nullptr;
 
@@ -858,8 +855,8 @@ void StaticMesh::Create(
 
     // Next, create collision objects for the collision meshes.
     uint32_t numCollisionShapes = 0;
-    btCollisionShape* collisionShapes[MAX_COLLISION_SHAPES] = {};
-    btTransform collisionTransforms[MAX_COLLISION_SHAPES] = {};
+    std::vector<btCollisionShape*> collisionShapes;
+    std::vector<btTransform> collisionTransforms;
 
     for (uint32_t i = 0; i < numCollisionMeshes; ++i)
     {
@@ -880,7 +877,6 @@ void StaticMesh::Create(
             node->mTransformation.Decompose(scale, rotation, position);
 
             bScale = { scale.x, scale.y, scale.z };
-            // Why do I need to reorder the quaternion values so that w comes first?
             bRotation = btQuaternion(rotation.x, rotation.y, rotation.z, rotation.w);
             bPosition = { position.x, position.y, position.z };
 
@@ -894,26 +890,26 @@ void StaticMesh::Create(
         if (strncmp(colMesh->mName.C_Str(), "UBX", 3) == 0)
         {
             // Box collision shape
-            collisionShapes[numCollisionShapes] = new btBoxShape(bScale);
-            collisionTransforms[numCollisionShapes] = bTransform;
+            collisionShapes.push_back(new btBoxShape(bScale));
+            collisionTransforms.push_back(bTransform);
             ++numCollisionShapes;
         }
         else if (strncmp(colMesh->mName.C_Str(), "USP", 3) == 0)
         {
             // Sphere collision shape
-            collisionShapes[numCollisionShapes] = new btSphereShape(bScale.x());
-            collisionTransforms[numCollisionShapes] = bTransform;
+            collisionShapes.push_back(new btSphereShape(bScale.x()));
+            collisionTransforms.push_back(bTransform);
             ++numCollisionShapes;
 
         }
         else if (strncmp(colMesh->mName.C_Str(), "UCX", 3) == 0)
         {
             // Convex collision shape
-            collisionShapes[numCollisionShapes] = new btConvexHullShape(
+            collisionShapes.push_back(new btConvexHullShape(
                 reinterpret_cast<float*>(colMesh->mVertices),
                 colMesh->mNumVertices,
-                sizeof(aiVector3D));
-            collisionTransforms[numCollisionShapes] = btTransform(bRotation, bPosition);
+                sizeof(aiVector3D)));
+            collisionTransforms.push_back(btTransform(bRotation, bPosition));
             ++numCollisionShapes;
         }
         else
@@ -922,16 +918,17 @@ void StaticMesh::Create(
         }
     }
 
+    OCT_ASSERT(collisionShapes.size() == numCollisionShapes);
+    OCT_ASSERT(collisionTransforms.size() == numCollisionShapes);
+
     // Any imported mesh will have a compound collision shape.
     // Engine assets like SM_Cube and SM_Sphere will still use non-compound shapes, as those are 
     // explicitly set up during editor initialization.
     // Note: Even when a mesh has only one collision shape, we still need to use a compound shape parent
     // so that it can receive there correct transform. Otherwise it will always be positioned at the origin.
-    SetCollisionShapes(numCollisionShapes, collisionShapes, collisionTransforms, true);
+    SetCollisionShapes(numCollisionShapes, collisionShapes.data(), collisionTransforms.data(), true);
 
     mMaterial = Renderer::Get()->GetDefaultMaterial();
-
-    ComputeBounds();
 
     Create();
 }

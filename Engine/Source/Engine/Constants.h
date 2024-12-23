@@ -21,7 +21,6 @@
 #define MAX_LIGHTS_PER_DRAW 8
 #define MAX_BONE_INFLUENCES 4
 #define MAX_BONES 128
-#define MAX_COLLISION_SHAPES 16
 #define MAX_UV_MAPS 2
 #define LIGHT_BAKE_SCALE 4.0f
 
@@ -61,6 +60,3 @@
 #define LUA_TYPE_CHECK 1
 #define LUA_SAFE_NODE 0
 
-// Flag to enable conversion of old Level + Blueprint assets into new Scene format.
-// Delete this after converting Yami to nodes.
-#define OCT_SCENE_CONVERSION 1

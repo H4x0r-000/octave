@@ -28,6 +28,7 @@
 #include "Nodes/3D/DirectionalLight3d.h"
 #include "Nodes/3D/Node3d.h"
 #include "Nodes/3D/SkeletalMesh3d.h"
+#include "Nodes/3D/InstancedMesh3d.h"
 #include "Nodes/3D/Box3d.h"
 #include "Nodes/3D/Sphere3d.h"
 #include "Nodes/3D/Particle3d.h"
@@ -37,13 +38,9 @@
 
 #include "imgui.h"
 
-static float sDefaultFocalDistance = 10.0f;
 constexpr float sMaxCameraPitch = 89.99f;
 
-Viewport3D::Viewport3D() :
-    mFirstPersonMoveSpeed(10.0f),
-    mFirstPersonRotationSpeed(0.07f),
-    mFocalDistance(sDefaultFocalDistance)
+Viewport3D::Viewport3D()
 {
 
 }
@@ -136,7 +133,9 @@ void Viewport3D::HandleDefaultControls()
             int32_t mouseX = 0;
             int32_t mouseY = 0;
             GetMousePosition(mouseX, mouseY);
-            Node3D* selectNode = Renderer::Get()->ProcessHitCheck(GetWorld(0), mouseX, mouseY);
+
+            uint32_t selectInstance = 0;
+            Node3D* selectNode = Renderer::Get()->ProcessHitCheck(GetWorld(0), mouseX, mouseY, &selectInstance);
 
             if (shiftDown || controlDown)
             {
@@ -167,7 +166,19 @@ void Viewport3D::HandleDefaultControls()
                     }
                     else
                     {
-                        GetEditorState()->SetSelectedNode(nullptr);
+                        int32_t curSelInstance = GetEditorState()->GetSelectedInstance();
+                        InstancedMesh3D* instMesh = selectNode ? selectNode->As<InstancedMesh3D>() : nullptr;
+                        if (instMesh != nullptr &&
+                            curSelInstance != int32_t(selectInstance))
+                        {
+                            // We clicked a different instance. Don't deselect, just change the sel instance
+                            GetEditorState()->SetSelectedNode(selectNode);
+                            GetEditorState()->SetSelectedInstance((int32_t)selectInstance);
+                        }
+                        else
+                        {
+                            GetEditorState()->SetSelectedNode(nullptr);
+                        }
                     }
                 }
             }
@@ -334,43 +345,43 @@ void Viewport3D::HandleDefaultControls()
         }
 
         glm::vec3 spawnPos = camera->GetWorldPosition() + mFocalDistance * camera->GetForwardVector();
-        if (controlDown && IsKeyJustDown(KEY_1))
+        if (altDown && IsKeyJustDown(KEY_1))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_STATIC_MESH, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_2))
+        else if (altDown && IsKeyJustDown(KEY_2))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_POINT_LIGHT, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_3))
+        else if (altDown && IsKeyJustDown(KEY_3))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_NODE_3D, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_4))
+        else if (altDown && IsKeyJustDown(KEY_4))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_DIRECTIONAL_LIGHT, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_5))
+        else if (altDown && IsKeyJustDown(KEY_5))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_SKELETAL_MESH, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_6))
+        else if (altDown && IsKeyJustDown(KEY_6))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_BOX, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_7))
+        else if (altDown && IsKeyJustDown(KEY_7))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_SPHERE, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_8))
+        else if (altDown && IsKeyJustDown(KEY_8))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_PARTICLE, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_9))
+        else if (altDown && IsKeyJustDown(KEY_9))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_AUDIO, nullptr, nullptr, true, spawnPos);
         }
-        else if (controlDown && IsKeyJustDown(KEY_0))
+        else if (altDown && IsKeyJustDown(KEY_0))
         {
             ActionManager::Get()->SpawnBasicNode(BASIC_SCENE, nullptr, nullptr, true, spawnPos);
         }
@@ -378,7 +389,28 @@ void Viewport3D::HandleDefaultControls()
 
         if (IsKeyJustDown(KEY_DELETE))
         {
-            ActionManager::Get()->DeleteSelectedNodes();
+            Node* selNode = GetEditorState()->GetSelectedNode();
+            int32_t selInstance = GetEditorState()->GetSelectedInstance();
+            InstancedMesh3D* instMesh = selNode ? selNode->As<InstancedMesh3D>() : nullptr;
+
+            if (instMesh && selInstance >= 0)
+            {
+                // If a specific instance is selected, delete that instance
+                std::vector<MeshInstanceData> meshInstData = instMesh->GetInstanceData();
+                if (selInstance < meshInstData.size())
+                {
+                    meshInstData.erase(meshInstData.begin() + selInstance);
+                    ActionManager::Get()->EXE_SetInstanceData(instMesh, -1, meshInstData);
+                }
+                else
+                {
+                    LogError("Can't delete invalid instance index");
+                }
+            }
+            else
+            {
+                ActionManager::Get()->DeleteSelectedNodes();
+            }
         }
 
         if (controlDown && IsKeyJustDown(KEY_D))
@@ -677,6 +709,21 @@ void Viewport3D::HandleTransformControls()
         }
     }
 
+    bool instance = false;
+    int32_t selInstance = GetEditorState()->GetSelectedInstance();
+    InstancedMesh3D* instMesh = nullptr;
+    MeshInstanceData instData;
+
+    if (ShouldTransformInstance())
+    {
+        instMesh = selectedComps[0]->As<InstancedMesh3D>();
+        if (selInstance >= 0 && selInstance < int32_t(instMesh->GetNumInstances()))
+        {
+            instData = instMesh->GetInstanceData(selInstance);
+            instance = true;
+        }
+    }
+
     Camera3D* camera = GetWorld(0)->GetActiveCamera();
     glm::mat4 invViewMat = camera->CalculateInvViewMatrix();
 
@@ -699,11 +746,21 @@ void Viewport3D::HandleTransformControls()
 
             float speed = shiftDown ? (shiftSpeedMult * translateSpeed) : translateSpeed;
 
-            for (uint32_t i = 0; i < transComps.size(); ++i)
+            if (instance)
             {
-                glm::vec3 pos = transComps[i]->GetWorldPosition();
-                pos += speed * glm::vec3(worldDelta.x, worldDelta.y, worldDelta.z);
-                transComps[i]->SetWorldPosition(pos);
+                glm::mat4 invTransform = glm::inverse(instMesh->GetTransform());
+                glm::vec3 localDelta = invTransform * glm::vec4(worldDelta.x, worldDelta.y, worldDelta.z, 0.0f);
+                instData.mPosition += speed * localDelta;
+                instMesh->SetInstanceData(selInstance, instData);
+            }
+            else
+            {
+                for (uint32_t i = 0; i < transComps.size(); ++i)
+                {
+                    glm::vec3 pos = transComps[i]->GetWorldPosition();
+                    pos += speed * glm::vec3(worldDelta.x, worldDelta.y, worldDelta.z);
+                    transComps[i]->SetWorldPosition(pos);
+                }
             }
         }
         else if (controlMode == ControlMode::Rotate)
@@ -721,7 +778,21 @@ void Viewport3D::HandleTransformControls()
 
             glm::quat addQuat = glm::angleAxis(-totalDelta * speed, rotateAxisWS);
 
-            if (mTransformLocal)
+            if (instance)
+            {
+                glm::mat4 invTransform = glm::inverse(instMesh->GetTransform());
+                glm::vec3 localRotateAxis = invTransform * glm::vec4(rotateAxisWS, 0.0f);
+                glm::quat localAddQuat = glm::angleAxis(-totalDelta * speed, localRotateAxis);
+
+                glm::quat instRotQuat = glm::quat(instData.mRotation * DEGREES_TO_RADIANS);
+                instRotQuat = localAddQuat * instRotQuat;
+                glm::vec3 eulerAngles = glm::eulerAngles(instRotQuat) * RADIANS_TO_DEGREES;
+                eulerAngles = EnforceEulerRange(eulerAngles);
+
+                instData.mRotation = eulerAngles;
+                instMesh->SetInstanceData(selInstance, instData);
+            }
+            else if (mTransformLocal)
             {
                 for (uint32_t i = 0; i < transComps.size(); ++i)
                 {
@@ -758,7 +829,13 @@ void Viewport3D::HandleTransformControls()
                 deltaScale3 *= GetLockedScaleDelta();
             }
 
-            if (mTransformLocal)
+            if (instance)
+            {
+                // TODO: Move in world space
+                instData.mScale += deltaScale3;
+                instMesh->SetInstanceData(selInstance, instData);
+            }
+            else if (mTransformLocal)
             {
                 for (uint32_t i = 0; i < transComps.size(); ++i)
                 {
@@ -837,7 +914,15 @@ void Viewport3D::HandleTransformControls()
             transComps[i]->UpdateTransform(false);
         }
 
-        ActionManager::Get()->EXE_EditTransforms(transComps, newTransforms);
+        if (instance)
+        {
+            ActionManager::Get()->EXE_SetInstanceData(instMesh, selInstance, { instData });
+        }
+        else
+        {
+            ActionManager::Get()->EXE_EditTransforms(transComps, newTransforms);
+        }
+
         GetEditorState()->SetControlMode(ControlMode::Default);
     }
 
@@ -996,14 +1081,29 @@ void Viewport3D::SavePreTransforms()
 {
     const std::vector<Node*>& selNodes = GetEditorState()->GetSelectedNodes();
     mPreTransforms.clear();
+    int32_t selInstance = GetEditorState()->GetSelectedInstance();
 
-    for (uint32_t i = 0; i < selNodes.size(); ++i)
+    if (ShouldTransformInstance())
     {
-        Node3D* transComp = (selNodes[i] && selNodes[i]->IsNode3D()) ? static_cast<Node3D*>(selNodes[i]) : nullptr;
+        // Moving an instance
+        InstancedMesh3D* instMesh = selNodes[0]->As<InstancedMesh3D>();
 
-        if (transComp)
+        if (selInstance >= 0 &&
+            selInstance < (int32_t)instMesh->GetNumInstances())
         {
-            mPreTransforms.push_back(transComp->GetTransform());
+            mInstancePreTransform = instMesh->GetInstanceData(selInstance);
+        }
+    }
+    else
+    {
+        for (uint32_t i = 0; i < selNodes.size(); ++i)
+        {
+            Node3D* transComp = (selNodes[i] && selNodes[i]->IsNode3D()) ? static_cast<Node3D*>(selNodes[i]) : nullptr;
+
+            if (transComp)
+            {
+                mPreTransforms.push_back(transComp->GetTransform());
+            }
         }
     }
 }
@@ -1011,20 +1111,35 @@ void Viewport3D::SavePreTransforms()
 void Viewport3D::RestorePreTransforms()
 {
     const std::vector<Node*>& selNodes = GetEditorState()->GetSelectedNodes();
+    int32_t selInstance = GetEditorState()->GetSelectedInstance();
 
-    for (uint32_t i = 0; i < selNodes.size(); ++i)
+    if (ShouldTransformInstance())
     {
-        if (i >= mPreTransforms.size())
+        // Moving an instance
+        InstancedMesh3D* instMesh = selNodes[0]->As<InstancedMesh3D>();
+
+        if (selInstance >= 0 &&
+            selInstance < (int32_t)instMesh->GetNumInstances())
         {
-            LogError("Component/Transform array mismatch?");
-            break;
+            instMesh->SetInstanceData(selInstance, mInstancePreTransform);
         }
-
-        Node3D* transComp = (selNodes[i] && selNodes[i]->IsNode3D()) ? static_cast<Node3D*>(selNodes[i]) : nullptr;
-
-        if (transComp)
+    }
+    else
+    {
+        for (uint32_t i = 0; i < selNodes.size(); ++i)
         {
-            transComp->SetTransform(mPreTransforms[i]);
+            if (i >= mPreTransforms.size())
+            {
+                LogError("Component/Transform array mismatch?");
+                break;
+            }
+
+            Node3D* transComp = (selNodes[i] && selNodes[i]->IsNode3D()) ? static_cast<Node3D*>(selNodes[i]) : nullptr;
+
+            if (transComp)
+            {
+                transComp->SetTransform(mPreTransforms[i]);
+            }
         }
     }
 }
@@ -1072,6 +1187,13 @@ glm::vec3 Viewport3D::GetLockedScaleDelta()
     glm::vec3 retDelta = glm::vec3(1, 1, 1);
     retDelta *= GetEditorState()->GetTransformLockVector(GetEditorState()->mTransformLock);
     return retDelta;
+}
+
+bool Viewport3D::ShouldTransformInstance() const
+{
+    return GetEditorState()->GetSelectedInstance() != -1 &&
+        GetEditorState()->GetSelectedNodes().size() == 1 &&
+        GetEditorState()->GetSelectedNodes()[0]->As<InstancedMesh3D>();
 }
 
 #endif

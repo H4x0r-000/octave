@@ -48,6 +48,7 @@
 #include "Nodes/3D/Particle3d.h"
 #include "Nodes/3D/Audio3d.h"
 #include "Nodes/3D/ShadowMesh3d.h"
+#include "Nodes/3D/InstancedMesh3d.h"
 #include "Nodes/3D/TextMesh3d.h"
 
 #include "System/System.h"
@@ -359,7 +360,16 @@ void ActionManager::BuildData(Platform platform, bool embedded)
                 solutionPath = engineState->mSolutionPath;
             }
 
-            std::string devenvCmd = std::string("devenv ") + solutionPath + " /Build \"Release|x64\" /Project " + buildProjName;
+            std::string devenvCmd;
+
+            if (GetEngineConfig()->mPackageForSteam)
+            {
+                devenvCmd = std::string("devenv ") + solutionPath + " /Build \"ReleaseSteam|x64\" /Project " + buildProjName;
+            }
+            else
+            {
+                devenvCmd = std::string("devenv ") + solutionPath + " /Build \"Release|x64\" /Project " + buildProjName;
+            }
 
             SYS_Exec(devenvCmd.c_str());
         }
@@ -466,6 +476,20 @@ void ActionManager::BuildData(Platform platform, bool embedded)
         // Rename the executable to the project name
         std::string renameCmd = std::string("mv ") + packagedDir + "Octave" + extension + " " + packagedDir + projectName + extension;
         SYS_Exec(renameCmd.c_str());
+    }
+
+    if (platform == Platform::Windows &&
+        GetEngineConfig()->mPackageForSteam)
+    {
+        // (1) Copy over redistributable DLL
+        std::string cpSteamDllCmd1 = std::string("cp ") + projectDir + (standalone ? "../" : "../Octave/") + "External/Steam/redistributable_bin/win64/steam_api64.dll " + packagedDir;
+        SYS_Exec(cpSteamDllCmd1.c_str());
+
+        // (2) Create a steam_appid.txt with 480
+        Stream idStream;
+        const char* txtId = "480";
+        idStream.WriteBytes((uint8_t*)txtId, (uint32_t)strlen(txtId));
+        idStream.WriteFile((packagedDir + "steam_appid.txt").c_str());
     }
 
     LogDebug("Build Finished");
@@ -583,8 +607,7 @@ Node* ActionManager::SpawnBasicNode(const std::string& name, Node* parent, Asset
     {
         SkeletalMesh3D* skNode = EXE_SpawnNode(SkeletalMesh3D::GetStaticType())->As<SkeletalMesh3D>();
 
-        // TODO: Add a default SkeletalMesh to Engine assets
-        SkeletalMesh* mesh = nullptr;
+        SkeletalMesh* mesh = LoadAsset<SkeletalMesh>("SK_EighthNote");
 
         if (srcAsset != nullptr &&
             srcAsset->GetType() == SkeletalMesh::GetStaticType())
@@ -665,7 +688,29 @@ Node* ActionManager::SpawnBasicNode(const std::string& name, Node* parent, Asset
     }
     else if (name == BASIC_TEXT_MESH)
     {
-    spawnedNode = EXE_SpawnNode(TextMesh3D::GetStaticType())->As<TextMesh3D>();
+        spawnedNode = EXE_SpawnNode(TextMesh3D::GetStaticType())->As<TextMesh3D>();
+    }
+    else if (name == BASIC_INSTANCED_MESH)
+    {
+        InstancedMesh3D* instMeshNode = EXE_SpawnNode(InstancedMesh3D::GetStaticType())->As<InstancedMesh3D>();
+        spawnedNode = instMeshNode;
+
+        StaticMesh* mesh = (StaticMesh*)LoadAsset("SM_Cube");
+
+        if (srcAsset != nullptr &&
+            srcAsset->GetType() == StaticMesh::GetStaticType())
+        {
+            mesh = static_cast<StaticMesh*>(srcAsset);
+            instMeshNode->SetName(mesh->GetName());
+        }
+
+        instMeshNode->SetStaticMesh(mesh);
+        instMeshNode->EnableOverlaps(false);
+        instMeshNode->EnableCollision(false);
+        instMeshNode->EnablePhysics(false);
+        instMeshNode->SetCollisionGroup(ColGroup1);
+        instMeshNode->SetCollisionMask(~ColGroup1);
+        instMeshNode->AddInstanceData(MeshInstanceData());
     }
 
     if (spawnedNode != nullptr)
@@ -901,6 +946,12 @@ void ActionManager::EXE_UnlinkScene(Node* node)
 void ActionManager::EXE_SetInstanceColors(const std::vector<ActionSetInstanceColorsData>& data)
 {
     ActionSetInstanceColors* action = new ActionSetInstanceColors(data);
+    ActionManager::Get()->ExecuteAction(action);
+}
+
+void ActionManager::EXE_SetInstanceData(InstancedMesh3D* instMesh, int32_t startIndex, const std::vector<MeshInstanceData>& data)
+{
+    ActionSetInstanceData* action = new ActionSetInstanceData(instMesh, startIndex, data);
     ActionManager::Get()->ExecuteAction(action);
 }
 
@@ -2516,6 +2567,76 @@ void ActionSetInstanceColors::Reverse()
     for (uint32_t i = 0; i < mPrevData.size(); ++i)
     {
         mPrevData[i].mMesh3d->SetInstanceColors(mPrevData[i].mColors, mPrevData[i].mBakedLight);
+    }
+}
+
+ActionSetInstanceData::ActionSetInstanceData(InstancedMesh3D* instMesh, int32_t startIndex, const std::vector<MeshInstanceData>& data)
+{
+    mInstMesh = instMesh;
+    mData = data;
+    mStartIndex = startIndex;
+    mData = data;
+
+    if (mStartIndex < 0)
+    {
+        // Negative start index means set entire array of instance data
+        mPrevData = mInstMesh->GetInstanceData();
+    }
+    else
+    {
+        // We are only setting a subset of the data
+        for (int32_t i = mStartIndex; (i < (int32_t)mInstMesh->GetNumInstances()) && (i < mStartIndex + data.size()); ++i)
+        {
+            mPrevData.push_back(mInstMesh->GetInstanceData(i));
+        }
+    }
+}
+
+void ActionSetInstanceData::Execute()
+{
+    if (mStartIndex < 0)
+    {
+        mInstMesh->SetInstanceData(mData);
+    }
+    else
+    {
+        // Remove X num of instance data
+        int32_t removeEnd = int32_t(mStartIndex + mData.size());
+        removeEnd = glm::min<uint32_t>(removeEnd, (int32_t)mInstMesh->GetNumInstances());
+        for (int32_t i = removeEnd - 1; i >= mStartIndex; --i)
+        {
+            mInstMesh->RemoveInstanceData(i);
+        }
+
+        // Add X num of new instance data
+        for (int32_t i = 0; i < mData.size(); ++i)
+        {
+            mInstMesh->AddInstanceData(mData[i], mStartIndex + i);
+        }
+    }
+}
+
+void ActionSetInstanceData::Reverse()
+{
+    if (mStartIndex < 0)
+    {
+        mInstMesh->SetInstanceData(mPrevData);
+    }
+    else
+    {
+        // Remove X num of instance data
+        int32_t removeEnd = int32_t(mStartIndex + mPrevData.size());
+        removeEnd = glm::min<uint32_t>(removeEnd, (int32_t)mInstMesh->GetNumInstances());
+        for (int32_t i = removeEnd - 1; i >= mStartIndex; --i)
+        {
+            mInstMesh->RemoveInstanceData(i);
+        }
+
+        // Add X num of new instance data
+        for (int32_t i = 0; i < mPrevData.size(); ++i)
+        {
+            mInstMesh->AddInstanceData(mPrevData[i], mStartIndex + i);
+        }
     }
 }
 

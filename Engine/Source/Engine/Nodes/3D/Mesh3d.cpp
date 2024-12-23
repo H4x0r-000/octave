@@ -50,21 +50,22 @@ void Mesh3D::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Bool, "Billboard", this, &mBillboard));
 }
 
-void Mesh3D::SaveStream(Stream& stream)
+bool Mesh3D::IsStaticMesh3D() const
 {
-    Primitive3D::SaveStream(stream);
-    stream.WriteAsset(mMaterialOverride);
-    stream.WriteBool(mBillboard);
+    return false;
 }
 
-void Mesh3D::LoadStream(Stream& stream)
+bool Mesh3D::IsSkeletalMesh3D() const
 {
-    Primitive3D::LoadStream(stream);
-    stream.ReadAsset(mMaterialOverride);
-    mBillboard = stream.ReadBool();
+    return false;
 }
 
-bool Mesh3D::IsShadowMesh3D()
+bool Mesh3D::IsInstancedMesh3D() const
+{
+    return false;
+}
+
+bool Mesh3D::IsShadowMesh3D() const
 {
     return false;
 }

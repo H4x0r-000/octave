@@ -398,7 +398,7 @@ void World::PurgeOverlaps(Primitive3D* prim)
     }
 }
 
-void World::RayTest(glm::vec3 start, glm::vec3 end, uint8_t collisionMask, RayTestResult& outResult)
+void World::RayTest(glm::vec3 start, glm::vec3 end, uint8_t collisionMask, RayTestResult& outResult, uint32_t numIgnoredObjects, btCollisionObject** ignoreObjects)
 {
     outResult.mStart = start;
     outResult.mEnd = end;
@@ -406,9 +406,11 @@ void World::RayTest(glm::vec3 start, glm::vec3 end, uint8_t collisionMask, RayTe
     btVector3 fromWorld = btVector3(start.x, start.y, start.z);
     btVector3 toWorld = btVector3(end.x, end.y, end.z);
 
-    btCollisionWorld::ClosestRayResultCallback result(fromWorld, toWorld);
+    IgnoreRayResultCallback result(fromWorld, toWorld);
     result.m_collisionFilterGroup = (short)ColGroupAll;
     result.m_collisionFilterMask = collisionMask;
+    result.mNumIgnoreObjects = numIgnoredObjects;
+    result.mIgnoreObjects = ignoreObjects;
 
     //mDynamicsWorld->rayTestSingle()
     mDynamicsWorld->rayTest(fromWorld, toWorld, result);
@@ -555,8 +557,7 @@ void World::RegisterNode(Node* node)
 
     if (node->GetNetId() != INVALID_NET_ID)
     {
-        std::vector<Node*>& repNodeVector = GetReplicatedNodeVector(node->GetReplicationRate());
-        repNodeVector.push_back(node);
+        AddNodeToRepVector(node);
     }
 }
 
@@ -589,26 +590,7 @@ void World::UnregisterNode(Node* node)
 
     if (node->GetNetId() != INVALID_NET_ID)
     {
-        // Remove the destroyed actor from their assigned replication vector.
-        std::vector<Node*>& repVector = GetReplicatedNodeVector(node->GetReplicationRate());
-        uint32_t& repIndex = GetReplicatedNodeIndex(node->GetReplicationRate());
-
-        for (uint32_t i = 0; i < repVector.size(); ++i)
-        {
-            if (repVector[i] == node)
-            {
-                repVector.erase(repVector.begin() + i);
-
-                // Decrement the rep index so that an actor doesn't get skipped for one cycle.
-                if (repIndex > 0 &&
-                    repIndex > i)
-                {
-                    repIndex = repIndex - 1;
-                }
-
-                break;
-            }
-        }
+        RemoveNodeFromRepVector(node);
     }
 }
 
@@ -637,6 +619,36 @@ uint32_t& World::GetIncrementalRepTier()
 uint32_t& World::GetIncrementalRepIndex()
 {
     return mIncrementalRepIndex;
+}
+
+void World::AddNodeToRepVector(Node* node)
+{
+    std::vector<Node*>& repNodeVector = GetReplicatedNodeVector(node->GetReplicationRate());
+    repNodeVector.push_back(node);
+}
+
+void World::RemoveNodeFromRepVector(Node* node)
+{
+    // Remove the destroyed actor from their assigned replication vector.
+    std::vector<Node*>& repVector = GetReplicatedNodeVector(node->GetReplicationRate());
+    uint32_t& repIndex = GetReplicatedNodeIndex(node->GetReplicationRate());
+
+    for (uint32_t i = 0; i < repVector.size(); ++i)
+    {
+        if (repVector[i] == node)
+        {
+            repVector.erase(repVector.begin() + i);
+
+            // Decrement the rep index so that an actor doesn't get skipped for one cycle.
+            if (repIndex > 0 &&
+                repIndex > i)
+            {
+                repIndex = repIndex - 1;
+            }
+
+            break;
+        }
+    }
 }
 
 void World::UpdateLines(float deltaTime)

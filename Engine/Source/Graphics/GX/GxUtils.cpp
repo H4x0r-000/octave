@@ -50,6 +50,7 @@ void SetupLights()
         glm::vec4 lightPosVS = cameraComp->GetViewMatrix() * glm::vec4(lightPosWS, 1.0f);
 
         glm::vec4 lightColor = lightData.mColor / GX_DYNAMIC_LIGHT_SCALE;
+        lightColor *= lightData.mIntensity;
         lightColor.a = 1.0f;
         lightColor = glm::clamp(lightColor, 0.0f, 1.0f);
         GXColor gxLightColor = { uint8_t(lightColor.r * 255.0f),
@@ -77,7 +78,7 @@ void SetupLights()
     }
 }
 
-void SetupLightMask(ShadingModel shadingModel, bool useBakedLight)
+void SetupLightMask(ShadingModel shadingModel, uint8_t lightingChannels, bool useBakedLight)
 {
     uint8_t lightMask = 0;
 
@@ -90,6 +91,11 @@ void SetupLightMask(ShadingModel shadingModel, bool useBakedLight)
             const LightData& lightData = gGxContext.mLightData[i];
 
             if ((lightData.mDomain == LightingDomain::All) && useBakedLight)
+            {
+                continue;
+            }
+
+            if ((lightData.mLightingChannels & lightingChannels) == 0)
             {
                 continue;
             }
@@ -274,11 +280,10 @@ void BindMaterial(MaterialLite* material, bool useVertexColor, bool useBakedLigh
         // After resolving the final (dynamically lit) color, add this baked color to it.
         bool fullBake = (vertexColorMode != VertexColorMode::TextureBlend);
 
-        // If adjusting LIGHT_BAKE_SCALE, need to adjust GX_CS_SCALE_4 below.
         GX_SetTevOrder(tevStage, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
         GX_SetTevColorIn(tevStage, GX_CC_ZERO, fullBake ? GX_CC_RASC : GX_CC_RASA, GX_CC_CPREV, GX_CC_ZERO);
         GX_SetTevAlphaIn(tevStage, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
-        GX_SetTevColorOp(tevStage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_4, GX_TRUE, GX_TEVREG0);
+        GX_SetTevColorOp(tevStage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVREG0);
         GX_SetTevAlphaOp(tevStage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVREG0);
         tevStage++;
     }
@@ -298,14 +303,12 @@ void BindMaterial(MaterialLite* material, bool useVertexColor, bool useBakedLigh
                                       uint8_t(ambientColor.b * 255.0f),
                                       uint8_t(ambientColor.a * 255.0f) });
 
-    // If adjusting GX_DYNAMIC_LIGHT_SCALE, need to update GX_CS_SCALE_4 below.
     GX_SetTevOrder(tevStage, GX_TEXCOORDNULL, GX_TEXMAP_NULL, matColorChannel);
     GX_SetTevColorIn(tevStage, GX_CC_ZERO, GX_CC_CPREV, GX_CC_RASC, GX_CC_ZERO);
-    GX_SetTevColorOp(tevStage, GX_TEV_ADD, GX_TB_ZERO, unlit ? GX_CS_SCALE_1 : GX_CS_SCALE_4, GX_TRUE, GX_TEVPREV);
+    GX_SetTevColorOp(tevStage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
     GX_SetTevAlphaIn(tevStage, GX_CA_ZERO, GX_CA_APREV, GX_CA_RASA, GX_CA_ZERO);
     GX_SetTevAlphaOp(tevStage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
     tevStage++;
-
 
     // Vertex color modulation
     if (useVertexColor)
@@ -405,6 +408,15 @@ void BindMaterial(MaterialLite* material, bool useVertexColor, bool useBakedLigh
                 0.0f,
                 {0,0,0,0});
         }
+    }
+
+    CullMode cullMode = material->GetCullMode();
+    switch (cullMode)
+    {
+        // Note: Culling is reversed on GX for some reason.
+        case CullMode::None: GX_SetCullMode(GX_CULL_NONE); break;
+        case CullMode::Back: GX_SetCullMode(GX_CULL_FRONT); break;
+        case CullMode::Front: GX_SetCullMode(GX_CULL_BACK); break;
     }
 }
 

@@ -287,7 +287,7 @@ void GFX_Reset()
 
 }
 
-Node3D* GFX_ProcessHitCheck(World* world, int32_t x, int32_t y)
+Node3D* GFX_ProcessHitCheck(World* world, int32_t x, int32_t y, uint32_t* outInstance)
 {
     return nullptr;
 }
@@ -498,10 +498,11 @@ void GFX_DrawStaticMeshComp(StaticMesh3D* staticMeshComp, StaticMesh* meshOverri
         StaticMeshResource* meshResource = mesh->GetResource();
 
         bool hasBakedLighting = staticMeshComp->HasBakedLighting();
-        bool hasColor = mesh->HasVertexColor() || hasBakedLighting;
+        bool hasInstanceColors = staticMeshComp->HasInstanceColors();
+        bool hasColor = mesh->HasVertexColor() || hasInstanceColors;
         
         uint32_t* instanceColors = nullptr;
-        if (hasBakedLighting)
+        if (hasInstanceColors)
         {
             instanceColors = staticMeshComp->GetInstanceColors().data();
         }
@@ -536,7 +537,7 @@ void GFX_DrawStaticMeshComp(StaticMesh3D* staticMeshComp, StaticMesh* meshOverri
         guMtxTranspose(modelViewInv, modelView);
         GX_LoadNrmMtxImm(modelView, GX_PNMTX0);
 
-        SetupLightMask(material->GetShadingModel(), hasBakedLighting);
+        SetupLightMask(material->GetShadingModel(), staticMeshComp->GetLightingChannels(), hasBakedLighting);
         SetupLightingChannels();
 
         if (hasColor)
@@ -674,7 +675,7 @@ void GFX_DrawSkeletalMeshComp(SkeletalMesh3D* skeletalMeshComp)
             }
         }
 
-        SetupLightMask(material->GetShadingModel(), false);
+        SetupLightMask(material->GetShadingModel(), skeletalMeshComp->GetLightingChannels(), false);
         SetupLightingChannels();
 
         GX_Begin(GX_TRIANGLES, GX_VTXFMT0, mesh->GetNumIndices());
@@ -817,6 +818,12 @@ void GFX_DrawShadowMeshComp(ShadowMesh3D* shadowMeshComp)
     }
 }
 
+// InstancedMeshComp
+void GFX_DrawInstancedMeshComp(InstancedMesh3D* instancedMeshComp)
+{
+
+}
+
 // TextMeshComp
 void GFX_CreateTextMeshCompResource(TextMesh3D* textMeshComp)
 {
@@ -885,7 +892,7 @@ void GFX_DrawTextMeshComp(TextMesh3D* textMeshComp)
     guMtxTranspose(modelViewInv, modelView);
     GX_LoadNrmMtxImm(modelView, GX_PNMTX0);
 
-    SetupLightMask(material->GetShadingModel(), false);
+    SetupLightMask(material->GetShadingModel(), textMeshComp->GetLightingChannels(), false);
     SetupLightingChannels();
 
     GX_Begin(GX_TRIANGLES, GX_VTXFMT0, numVertices);
@@ -974,7 +981,7 @@ void GFX_DrawParticleComp(Particle3D* particleComp)
         uint32_t numParticles = particleComp->GetNumParticles();
         OCT_ASSERT(numParticles * 4 == numVertices);
 
-        SetupLightMask(material->GetShadingModel(), false);
+        SetupLightMask(material->GetShadingModel(), particleComp->GetLightingChannels(), false);
         SetupLightingChannels();
 
         GX_Begin(GX_TRIANGLES, GX_VTXFMT0, numParticles * 6);

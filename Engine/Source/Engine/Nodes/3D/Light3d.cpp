@@ -10,11 +10,7 @@ static const char* sLightingDomainStrings[] =
 };
 static_assert(int32_t(LightingDomain::Count) == 3, "Need to update string conversion table");
 
-Light3D::Light3D() :
-    mColor(1,1,1,1),
-    mIntensity(1),
-    mDomain(LightingDomain::Dynamic),
-    mCastShadows(true)
+Light3D::Light3D()
 {
 
 }
@@ -36,26 +32,10 @@ void Light3D::GatherProperties(std::vector<Property>& outProps)
     SCOPED_CATEGORY("Light");
 
     outProps.push_back(Property(DatumType::Color, "Color", this, &mColor));
+    outProps.push_back(Property(DatumType::Float, "Intensity", this, &mIntensity));
     outProps.push_back(Property(DatumType::Byte, "Lighting Domain", this, &mDomain, 1, nullptr, 0, int32_t(LightingDomain::Count), sLightingDomainStrings));
     outProps.push_back(Property(DatumType::Bool, "Cast Shadows", this, &mCastShadows));
-}
-
-void Light3D::SaveStream(Stream& stream)
-{
-    Node3D::SaveStream(stream);
-    stream.WriteVec4(mColor);
-    stream.WriteFloat(mIntensity);
-    stream.WriteBool(mCastShadows);
-    stream.WriteUint8((uint8_t)mDomain);
-}
-
-void Light3D::LoadStream(Stream& stream)
-{
-    Node3D::LoadStream(stream);
-    mColor = stream.ReadVec4();
-    mIntensity = stream.ReadFloat();
-    mCastShadows = stream.ReadBool();
-    mDomain = (LightingDomain) stream.ReadUint8();
+    outProps.push_back(Property(DatumType::Byte, "Lighting Channels", this, &mLightingChannels, 1, nullptr, (int32_t)ByteExtra::FlagWidget));
 }
 
 bool Light3D::IsLight3D() const
@@ -101,4 +81,14 @@ void Light3D::SetCastShadows(bool castShadows)
 bool Light3D::ShouldCastShadows() const
 {
     return mCastShadows;
+}
+
+uint8_t Light3D::GetLightingChannels() const
+{
+    return mLightingChannels;
+}
+
+void Light3D::SetLightingChannels(uint8_t channels)
+{
+    mLightingChannels = channels;
 }
